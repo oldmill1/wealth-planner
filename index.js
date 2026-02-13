@@ -7,6 +7,7 @@ import {Box, Text, render, useApp, useInput, useStdout} from 'ink';
 const CONFIG_DIR = path.join(os.homedir(), '.config', 'wealth-planner');
 const DB_PATH = path.join(CONFIG_DIR, 'main.json');
 const DEFAULT_TIMEZONE = 'America/New_York';
+const INSTITUTION_TYPES = new Set(['BANK', 'CREDIT_CARD']);
 
 function createRecord({name, timezone}) {
 	const now = new Date().toISOString();
@@ -19,6 +20,84 @@ function createRecord({name, timezone}) {
 	};
 }
 
+function isValidInstitutionType(value) {
+	return INSTITUTION_TYPES.has(value);
+}
+
+function isValidInstitution(record) {
+	return (
+		record !== null &&
+		typeof record === 'object' &&
+		typeof record.id === 'string' &&
+		isValidInstitutionType(record.type) &&
+		typeof record.name === 'string' &&
+		typeof record.user_id === 'string' &&
+		typeof record.created_at === 'string' &&
+		typeof record.updated_at === 'string' &&
+		Array.isArray(record.transaction_ids) &&
+		record.transaction_ids.every((id) => typeof id === 'string')
+	);
+}
+
+function normalizeInstitution(record) {
+	if (record === null || typeof record !== 'object') {
+		return null;
+	}
+
+	const transactionIds = Array.isArray(record.transaction_ids)
+		? record.transaction_ids.filter((id) => typeof id === 'string')
+		: [];
+
+	const normalized = {
+		...record,
+		transaction_ids: transactionIds
+	};
+
+	return isValidInstitution(normalized) ? normalized : null;
+}
+
+function normalizeDatabaseShape(parsed) {
+	let changed = false;
+	const normalized = parsed && typeof parsed === 'object' ? {...parsed} : {};
+	const now = new Date().toISOString();
+
+	if (!normalized.meta || typeof normalized.meta !== 'object') {
+		normalized.meta = {
+			version: 1,
+			created_at: now,
+			updated_at: now
+		};
+		changed = true;
+	}
+
+	if (!Array.isArray(normalized.users)) {
+		normalized.users = [];
+		changed = true;
+	}
+
+	if (!Array.isArray(normalized.institutions)) {
+		normalized.institutions = [];
+		changed = true;
+	} else {
+		const sanitizedInstitutions = normalized.institutions
+			.map(normalizeInstitution)
+			.filter((institution) => institution !== null);
+		if (sanitizedInstitutions.length !== normalized.institutions.length) {
+			changed = true;
+		}
+		normalized.institutions = sanitizedInstitutions;
+	}
+
+	if (changed) {
+		normalized.meta = {
+			...normalized.meta,
+			updated_at: now
+		};
+	}
+
+	return {normalized, changed};
+}
+
 function createDatabase(user) {
 	const now = new Date().toISOString();
 	return {
@@ -27,7 +106,9 @@ function createDatabase(user) {
 			created_at: now,
 			updated_at: now
 		},
-		users: [user]
+		users: [user],
+		// Contract: institutions stores BANK/CREDIT_CARD records tied to a user UUID.
+		institutions: []
 	};
 }
 
@@ -36,7 +117,11 @@ async function loadOrInitDatabase() {
 		await fs.access(DB_PATH);
 		const raw = await fs.readFile(DB_PATH, 'utf8');
 		const parsed = JSON.parse(raw);
-		const firstUser = parsed?.users?.[0] ?? null;
+		const {normalized, changed} = normalizeDatabaseShape(parsed);
+		if (changed) {
+			await fs.writeFile(DB_PATH, JSON.stringify(normalized, null, 2), 'utf8');
+		}
+		const firstUser = normalized.users?.[0] ?? null;
 		return {firstRun: false, user: firstUser};
 	} catch (error) {
 		if (error && error.code !== 'ENOENT') {
