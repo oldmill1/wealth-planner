@@ -135,6 +135,37 @@ export async function saveFirstUser(name, timezone) {
 	return user;
 }
 
+export async function addInstitutionForUser({userId, name}) {
+	const trimmedName = name.trim();
+	if (!trimmedName) {
+		throw new Error('Institution name is required.');
+	}
+
+	const raw = await fs.readFile(DB_PATH, 'utf8');
+	const parsed = JSON.parse(raw);
+	const {normalized} = normalizeDatabaseShape(parsed);
+	const now = new Date().toISOString();
+
+	const institution = {
+		id: crypto.randomUUID(),
+		user_id: userId,
+		type: 'BANK',
+		name: trimmedName,
+		transaction_ids: [],
+		created_at: now,
+		updated_at: now
+	};
+
+	normalized.institutions = [...(normalized.institutions ?? []), institution];
+	normalized.meta = {
+		...normalized.meta,
+		updated_at: now
+	};
+
+	await fs.writeFile(DB_PATH, JSON.stringify(normalized, null, 2), 'utf8');
+	return institution;
+}
+
 export function isValidTimezone(timezone) {
 	try {
 		new Intl.DateTimeFormat('en-US', {timeZone: timezone});

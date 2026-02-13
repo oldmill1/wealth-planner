@@ -23,6 +23,11 @@ function normalizeCommandRegistryShape(parsed) {
 		changed = true;
 	}
 
+	if (!normalized.commands.add_institutions || typeof normalized.commands.add_institutions !== 'object') {
+		normalized.commands.add_institutions = {...DEFAULT_COMMAND_REGISTRY.commands.add_institutions};
+		changed = true;
+	}
+
 	return {normalized, changed};
 }
 

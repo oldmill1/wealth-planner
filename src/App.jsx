@@ -1,11 +1,17 @@
 import React, {useEffect, useMemo, useState} from 'react';
 import {Box, Text, useApp, useInput, useStdout} from 'ink';
 
+import {AddInstitutionModal} from './components/AddInstitutionModal.jsx';
 import {DEFAULT_TIMEZONE, TABS} from './constants.js';
 import {BottomBar} from './components/BottomBar.jsx';
 import {InstitutionsDashboard} from './components/InstitutionsDashboard.jsx';
 import {Tabs} from './components/Tabs.jsx';
-import {loadOrInitDatabase, isValidTimezone, saveFirstUser} from './services/database.js';
+import {
+	addInstitutionForUser,
+	loadOrInitDatabase,
+	isValidTimezone,
+	saveFirstUser
+} from './services/database.js';
 import {executeCommand, loadOrInitCommandRegistry} from './services/commands.js';
 
 function mapInstitutionToRow(institution) {
@@ -41,7 +47,7 @@ function withEmptyInstitutionRow(rows) {
 
 const TAB_COMMANDS = {
 	Home: ['clean_db'],
-	Institutions: []
+	Institutions: ['add_institutions']
 };
 
 function fuzzyMatch(query, value) {
@@ -80,6 +86,9 @@ export function App() {
 	const [isRunningCommand, setIsRunningCommand] = useState(false);
 	const [currentTab, setCurrentTab] = useState('Home');
 	const [institutionRows, setInstitutionRows] = useState([]);
+	const [isAddInstitutionModalOpen, setIsAddInstitutionModalOpen] = useState(false);
+	const [addInstitutionNameInput, setAddInstitutionNameInput] = useState('');
+	const [isCreatingInstitution, setIsCreatingInstitution] = useState(false);
 	const availableCommands = useMemo(() => {
 		const tabCommands = TAB_COMMANDS[currentTab] ?? [];
 		return tabCommands.filter((command) => Object.hasOwn(commands, command));
@@ -130,6 +139,55 @@ export function App() {
 			return;
 		}
 
+		if (isAddInstitutionModalOpen) {
+			if (key.escape) {
+				setIsAddInstitutionModalOpen(false);
+				setAddInstitutionNameInput('');
+				setCommandMessage('Add institution cancelled.');
+				return;
+			}
+
+			if (key.return) {
+				const trimmedName = addInstitutionNameInput.trim();
+				if (!trimmedName) {
+					setCommandMessage('Institution name is required.');
+					return;
+				}
+				if (!user?.id) {
+					setCommandMessage('No active user loaded.');
+					setIsAddInstitutionModalOpen(false);
+					setAddInstitutionNameInput('');
+					return;
+				}
+
+				setIsCreatingInstitution(true);
+				addInstitutionForUser({userId: user.id, name: trimmedName})
+					.then((institution) => {
+						setInstitutionRows((prev) => [...prev, mapInstitutionToRow(institution)]);
+						setCommandMessage(`Institution "${institution.name}" created.`);
+						setIsAddInstitutionModalOpen(false);
+						setAddInstitutionNameInput('');
+					})
+					.catch((error) => {
+						setCommandMessage(`Failed to create institution: ${error.message}`);
+					})
+					.finally(() => {
+						setIsCreatingInstitution(false);
+					});
+				return;
+			}
+
+			if (key.backspace || key.delete) {
+				setAddInstitutionNameInput((prev) => prev.slice(0, -1));
+				return;
+			}
+
+			if (!key.ctrl && !key.meta && input && input !== '\t') {
+				setAddInstitutionNameInput((prev) => prev + input);
+			}
+			return;
+		}
+
 		if (commandMode) {
 			if (key.escape) {
 				setCommandMode(false);
@@ -154,6 +212,15 @@ export function App() {
 
 				if (!commandToRun) {
 					setCommandMessage(`No command match for "/${normalizedCommand}" in ${currentTab}.`);
+					return;
+				}
+
+				if (commandToRun === 'add_institutions') {
+					setCommandMode(false);
+					setCommandInput('');
+					setCommandMessage('');
+					setIsAddInstitutionModalOpen(true);
+					setAddInstitutionNameInput('');
 					return;
 				}
 
@@ -365,6 +432,12 @@ export function App() {
 				alignItems={currentTab === 'Institutions' ? 'stretch' : 'center'}
 			>
 				{content}
+				{isAddInstitutionModalOpen && (
+					<AddInstitutionModal
+						nameInput={addInstitutionNameInput}
+						isSaving={isCreatingInstitution}
+					/>
+				)}
 			</Box>
 			<BottomBar
 				terminalWidth={terminalWidth}

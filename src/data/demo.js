@@ -33,6 +33,9 @@ export const DEFAULT_COMMAND_REGISTRY = {
 	commands: {
 		clean_db: {
 			description: 'Backup then remove the local main database file.'
+		},
+		add_institutions: {
+			description: 'Create a new institution for the active user.'
 		}
 	}
 };
