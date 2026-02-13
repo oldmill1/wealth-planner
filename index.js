@@ -211,6 +211,40 @@ async function executeCommand(commandName) {
 	throw new Error(`Unknown command: /${commandName}`);
 }
 
+function renderTabs(terminalWidth) {
+	const divider = '-'.repeat(Math.max(24, terminalWidth - 2));
+	return React.createElement(
+		Box,
+		{
+			width: '100%',
+			flexDirection: 'column'
+		},
+		React.createElement(
+			Box,
+			{
+				width: '100%',
+				paddingX: 2,
+				paddingY: 0,
+				flexDirection: 'row',
+				alignItems: 'center'
+			},
+			React.createElement(Text, {color: '#3b3f70'}, '|  '),
+			React.createElement(Text, {backgroundColor: '#2a2b52', color: '#d4d6ff'}, '  Home  '),
+			React.createElement(Text, {color: '#3b3f70'}, '  |  '),
+			React.createElement(Text, {color: '#777898'}, 'Institutions'),
+			React.createElement(Text, {color: '#3b3f70'}, '  |')
+		),
+		React.createElement(
+			Box,
+			{
+				width: '100%',
+				paddingX: 2
+			},
+			React.createElement(Text, {color: '#2b2d47'}, divider)
+		)
+	);
+}
+
 function App() {
 	const {exit} = useApp();
 	const {stdout} = useStdout();
@@ -466,11 +500,20 @@ function App() {
 			width: terminalWidth,
 			height: terminalHeight,
 			flexDirection: 'column',
-			justifyContent: 'center',
-			alignItems: 'center',
 			backgroundColor: '#161723'
 		},
-		...fullContent
+		renderTabs(terminalWidth),
+		React.createElement(
+			Box,
+			{
+				width: '100%',
+				flexGrow: 1,
+				flexDirection: 'column',
+				justifyContent: 'center',
+				alignItems: 'center'
+			},
+			...fullContent
+		)
 	);
 }
 
