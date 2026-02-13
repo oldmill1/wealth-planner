@@ -3,11 +3,21 @@ import os from 'node:os';
 import path from 'node:path';
 import React, {useEffect, useMemo, useState} from 'react';
 import {Box, Text, render, useApp, useInput, useStdout} from 'ink';
+import {cleanDb} from './lib/clean-db.js';
 
 const CONFIG_DIR = path.join(os.homedir(), '.config', 'wealth-planner');
 const DB_PATH = path.join(CONFIG_DIR, 'main.json');
+const COMMANDS_PATH = path.join(CONFIG_DIR, 'commands.json');
 const DEFAULT_TIMEZONE = 'America/New_York';
 const INSTITUTION_TYPES = new Set(['BANK', 'CREDIT_CARD']);
+const DEFAULT_COMMAND_REGISTRY = {
+	version: 1,
+	commands: {
+		clean_db: {
+			description: 'Backup then remove the local main database file.'
+		}
+	}
+};
 
 function createRecord({name, timezone}) {
 	const now = new Date().toISOString();
@@ -98,6 +108,28 @@ function normalizeDatabaseShape(parsed) {
 	return {normalized, changed};
 }
 
+function normalizeCommandRegistryShape(parsed) {
+	let changed = false;
+	const normalized = parsed && typeof parsed === 'object' ? {...parsed} : {};
+
+	if (typeof normalized.version !== 'number') {
+		normalized.version = DEFAULT_COMMAND_REGISTRY.version;
+		changed = true;
+	}
+
+	if (!normalized.commands || typeof normalized.commands !== 'object') {
+		normalized.commands = {...DEFAULT_COMMAND_REGISTRY.commands};
+		changed = true;
+	}
+
+	if (!normalized.commands.clean_db || typeof normalized.commands.clean_db !== 'object') {
+		normalized.commands.clean_db = {...DEFAULT_COMMAND_REGISTRY.commands.clean_db};
+		changed = true;
+	}
+
+	return {normalized, changed};
+}
+
 function createDatabase(user) {
 	const now = new Date().toISOString();
 	return {
@@ -131,6 +163,26 @@ async function loadOrInitDatabase() {
 	}
 }
 
+async function loadOrInitCommandRegistry() {
+	await fs.mkdir(CONFIG_DIR, {recursive: true});
+
+	try {
+		const raw = await fs.readFile(COMMANDS_PATH, 'utf8');
+		const parsed = JSON.parse(raw);
+		const {normalized, changed} = normalizeCommandRegistryShape(parsed);
+		if (changed) {
+			await fs.writeFile(COMMANDS_PATH, JSON.stringify(normalized, null, 2), 'utf8');
+		}
+		return normalized.commands;
+	} catch (error) {
+		if (error && error.code !== 'ENOENT') {
+			throw error;
+		}
+		await fs.writeFile(COMMANDS_PATH, JSON.stringify(DEFAULT_COMMAND_REGISTRY, null, 2), 'utf8');
+		return DEFAULT_COMMAND_REGISTRY.commands;
+	}
+}
+
 async function saveFirstUser(name, timezone) {
 	await fs.mkdir(CONFIG_DIR, {recursive: true});
 	const user = createRecord({name, timezone});
@@ -148,6 +200,17 @@ function isValidTimezone(timezone) {
 	}
 }
 
+async function executeCommand(commandName) {
+	if (commandName === 'clean_db') {
+		const result = await cleanDb();
+		if (!result.removed) {
+			return `No database found at ${result.dbPath}.`;
+		}
+		return `Database removed. Backup: ${result.backupPath}`;
+	}
+	throw new Error(`Unknown command: /${commandName}`);
+}
+
 function App() {
 	const {exit} = useApp();
 	const {stdout} = useStdout();
@@ -159,11 +222,22 @@ function App() {
 	const [nameInput, setNameInput] = useState('');
 	const [timezoneInput, setTimezoneInput] = useState(DEFAULT_TIMEZONE);
 	const [user, setUser] = useState(null);
+	const [commands, setCommands] = useState({});
+	const [commandMode, setCommandMode] = useState(false);
+	const [commandInput, setCommandInput] = useState('');
+	const [commandMessage, setCommandMessage] = useState('');
+	const [isRunningCommand, setIsRunningCommand] = useState(false);
 
 	useEffect(() => {
 		let mounted = true;
 		(async () => {
 			try {
+				const loadedCommands = await loadOrInitCommandRegistry();
+				if (!mounted) {
+					return;
+				}
+				setCommands(loadedCommands);
+
 				const bios = await loadOrInitDatabase();
 				if (!mounted) {
 					return;
@@ -188,7 +262,70 @@ function App() {
 	}, []);
 
 	useInput((input, key) => {
-		if (key.ctrl && input === 'c' || key.escape) {
+		if (key.ctrl && input === 'c') {
+			exit();
+			return;
+		}
+
+		if (commandMode) {
+			if (key.escape) {
+				setCommandMode(false);
+				setCommandInput('');
+				setCommandMessage('');
+				return;
+			}
+
+			if (key.return) {
+				const normalizedCommand = commandInput.trim().replace(/^\/+/, '');
+				if (!normalizedCommand) {
+					setCommandMessage('Enter a command. Example: /clean_db');
+					return;
+				}
+				if (!Object.hasOwn(commands, normalizedCommand)) {
+					setCommandMessage(`Unknown command: /${normalizedCommand}`);
+					return;
+				}
+
+				setIsRunningCommand(true);
+				executeCommand(normalizedCommand)
+					.then((message) => {
+						setCommandMessage(message);
+						if (normalizedCommand === 'clean_db') {
+							setUser(null);
+							setNameInput('');
+							setTimezoneInput(DEFAULT_TIMEZONE);
+							setBootState('wizard_name');
+						}
+					})
+					.catch((error) => {
+						setCommandMessage(`Command failed: ${error.message}`);
+					})
+					.finally(() => {
+						setIsRunningCommand(false);
+						setCommandMode(false);
+						setCommandInput('');
+					});
+				return;
+			}
+
+			if (key.backspace || key.delete) {
+				setCommandInput((prev) => prev.slice(0, -1));
+				return;
+			}
+
+			if (!key.ctrl && !key.meta && input) {
+				setCommandInput((prev) => prev + input);
+			}
+			return;
+		}
+
+		if (input === '/') {
+			setCommandMode(true);
+			setCommandInput('');
+			return;
+		}
+
+		if (key.escape) {
 			exit();
 			return;
 		}
@@ -299,9 +436,29 @@ function App() {
 				{key: 'tz', color: 'blue', dimColor: true},
 				`Timezone: ${user?.timezone ?? DEFAULT_TIMEZONE}`
 			),
-			React.createElement(Text, {key: 'hint', color: 'blue', dimColor: true}, 'Press q to quit')
+			React.createElement(Text, {key: 'hint', color: 'blue', dimColor: true}, 'Press / for command mode'),
+			React.createElement(Text, {key: 'hint2', color: 'blue', dimColor: true}, 'Press q to quit')
 		];
 	}, [bootState, errorMessage, nameInput, timezoneInput, user]);
+
+	const fullContent = [...content];
+
+	if (commandMode) {
+		fullContent.push(
+			React.createElement(Text, {key: 'cmd', color: 'greenBright'}, `/${commandInput || '|'}`),
+			React.createElement(
+				Text,
+				{key: 'cmdhint', color: 'blue', dimColor: true},
+				'Command mode: press Enter to run, Esc to cancel'
+			)
+		);
+	}
+
+	if (isRunningCommand) {
+		fullContent.push(React.createElement(Text, {key: 'running', color: 'blueBright'}, 'Running command...'));
+	} else if (commandMessage) {
+		fullContent.push(React.createElement(Text, {key: 'result', color: 'greenBright'}, commandMessage));
+	}
 
 	return React.createElement(
 		Box,
@@ -312,7 +469,7 @@ function App() {
 			justifyContent: 'center',
 			alignItems: 'center'
 		},
-		...content
+		...fullContent
 	);
 }
 
