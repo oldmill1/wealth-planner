@@ -82,6 +82,7 @@ export function App() {
 	const [commands, setCommands] = useState({});
 	const [commandMode, setCommandMode] = useState(false);
 	const [commandInput, setCommandInput] = useState('');
+	const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0);
 	const [commandMessage, setCommandMessage] = useState('');
 	const [isRunningCommand, setIsRunningCommand] = useState(false);
 	const [currentTab, setCurrentTab] = useState('Home');
@@ -97,6 +98,11 @@ export function App() {
 		const normalized = commandInput.trim().replace(/^\/+/, '');
 		return availableCommands.filter((command) => fuzzyMatch(normalized, command));
 	}, [availableCommands, commandInput]);
+	const selectedSuggestion = commandSuggestions[selectedSuggestionIndex] ?? commandSuggestions[0] ?? null;
+
+	useEffect(() => {
+		setSelectedSuggestionIndex(0);
+	}, [commandInput, commandSuggestions.length, currentTab]);
 
 	useEffect(() => {
 		let mounted = true;
@@ -192,22 +198,31 @@ export function App() {
 			if (key.escape) {
 				setCommandMode(false);
 				setCommandInput('');
+				setSelectedSuggestionIndex(0);
 				setCommandMessage('');
+				return;
+			}
+
+			if (key.tab || input === '\t') {
+				if (commandSuggestions.length > 0) {
+					setSelectedSuggestionIndex((prev) => (prev + 1) % commandSuggestions.length);
+				}
 				return;
 			}
 
 			if (key.return) {
 				const normalizedCommand = commandInput.trim().replace(/^\/+/, '');
 				if (!normalizedCommand) {
-					setCommandMessage('Enter a command.');
-					return;
+					if (selectedSuggestion) {
+						setCommandInput(selectedSuggestion);
+					}
 				}
 
 				let commandToRun = null;
 				if (availableCommands.includes(normalizedCommand)) {
 					commandToRun = normalizedCommand;
-				} else if (commandSuggestions.length === 1) {
-					commandToRun = commandSuggestions[0];
+				} else if (selectedSuggestion) {
+					commandToRun = selectedSuggestion;
 				}
 
 				if (!commandToRun) {
@@ -218,6 +233,7 @@ export function App() {
 				if (commandToRun === 'add_institutions') {
 					setCommandMode(false);
 					setCommandInput('');
+					setSelectedSuggestionIndex(0);
 					setCommandMessage('');
 					setIsAddInstitutionModalOpen(true);
 					setAddInstitutionNameInput('');
@@ -243,6 +259,7 @@ export function App() {
 						setIsRunningCommand(false);
 						setCommandMode(false);
 						setCommandInput('');
+						setSelectedSuggestionIndex(0);
 					});
 				return;
 			}
@@ -261,6 +278,7 @@ export function App() {
 		if (input === '/') {
 			setCommandMode(true);
 			setCommandInput('');
+			setSelectedSuggestionIndex(0);
 			setCommandMessage('');
 			return;
 		}
@@ -444,6 +462,7 @@ export function App() {
 				commandMode={commandMode}
 				commandInput={commandInput}
 				suggestions={commandSuggestions}
+				selectedSuggestionIndex={selectedSuggestionIndex}
 				commandMessage={commandMessage}
 				isRunningCommand={isRunningCommand}
 			/>
