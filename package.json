@@ -2,10 +2,10 @@
   "name": "wealth-planner",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "src/index.jsx",
   "scripts": {
-    "start": "node index.js",
-    "dev": "node --watch index.js",
+    "start": "node --import tsx src/index.jsx",
+    "dev": "node --watch --import tsx src/index.jsx",
     "clean_db": "node scripts/clean-db.js"
   },
   "keywords": [],
@@ -15,5 +15,8 @@
   "dependencies": {
     "ink": "^6.7.0",
     "react": "^19.2.4"
+  },
+  "devDependencies": {
+    "tsx": "^4.21.0"
   }
 }
