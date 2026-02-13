@@ -2,14 +2,17 @@ import React, {useEffect, useMemo, useState} from 'react';
 import {Box, Text, useApp, useInput, useStdout} from 'ink';
 
 import {AddInstitutionModal} from './components/AddInstitutionModal.jsx';
+import {AddTransactionsModal} from './components/AddTransactionsModal.jsx';
 import {DEFAULT_TIMEZONE, TABS} from './constants.js';
 import {BottomBar} from './components/BottomBar.jsx';
 import {InstitutionsDashboard} from './components/InstitutionsDashboard.jsx';
 import {Tabs} from './components/Tabs.jsx';
 import {
 	addInstitutionForUser,
+	importTransactionsToDatabase,
 	loadOrInitDatabase,
 	isValidTimezone,
+	previewTransactionsCsvImport,
 	saveFirstUser
 } from './services/database.js';
 import {executeCommand, loadOrInitCommandRegistry} from './services/commands.js';
@@ -47,7 +50,7 @@ function withEmptyInstitutionRow(rows) {
 
 const TAB_COMMANDS = {
 	Home: ['clean_db'],
-	Institutions: ['add_institutions']
+	Institutions: ['add_institutions', 'add_transactions']
 };
 
 function fuzzyMatch(query, value) {
@@ -90,6 +93,12 @@ export function App() {
 	const [isAddInstitutionModalOpen, setIsAddInstitutionModalOpen] = useState(false);
 	const [addInstitutionNameInput, setAddInstitutionNameInput] = useState('');
 	const [isCreatingInstitution, setIsCreatingInstitution] = useState(false);
+	const [isAddTransactionsModalOpen, setIsAddTransactionsModalOpen] = useState(false);
+	const [transactionInstitutionIndex, setTransactionInstitutionIndex] = useState(0);
+	const [transactionCsvPathInput, setTransactionCsvPathInput] = useState('~/Downloads/SIMPLII.csv');
+	const [transactionImportStep, setTransactionImportStep] = useState('form');
+	const [transactionPreview, setTransactionPreview] = useState(null);
+	const [isImportingTransactions, setIsImportingTransactions] = useState(false);
 	const availableCommands = useMemo(() => {
 		const tabCommands = TAB_COMMANDS[currentTab] ?? [];
 		return tabCommands.filter((command) => Object.hasOwn(commands, command));
@@ -194,6 +203,110 @@ export function App() {
 			return;
 		}
 
+		if (isAddTransactionsModalOpen) {
+			const hasInstitutions = institutionRows.length > 0;
+
+			if (key.escape) {
+				setIsAddTransactionsModalOpen(false);
+				setTransactionImportStep('form');
+				setTransactionPreview(null);
+				setCommandMessage('Add transactions cancelled.');
+				return;
+			}
+
+			if (transactionImportStep === 'form') {
+				if (key.leftArrow && hasInstitutions) {
+					setTransactionInstitutionIndex((prev) => (
+						(prev - 1 + institutionRows.length) % institutionRows.length
+					));
+					return;
+				}
+
+				if (key.rightArrow && hasInstitutions) {
+					setTransactionInstitutionIndex((prev) => (
+						(prev + 1) % institutionRows.length
+					));
+					return;
+				}
+			}
+
+			if (key.return) {
+				if (!user?.id) {
+					setCommandMessage('No active user loaded.');
+					return;
+				}
+				if (!hasInstitutions) {
+					setCommandMessage('Create an institution first.');
+					return;
+				}
+
+				if (transactionImportStep === 'form') {
+					setIsImportingTransactions(true);
+					const selectedInstitution = institutionRows[transactionInstitutionIndex];
+					previewTransactionsCsvImport({
+						userId: user.id,
+						institutionId: selectedInstitution.id,
+						csvPath: transactionCsvPathInput
+					})
+						.then((preview) => {
+							setTransactionPreview(preview);
+							setTransactionImportStep('preview');
+						})
+						.catch((error) => {
+							setCommandMessage(`Preview failed: ${error.message}`);
+						})
+						.finally(() => {
+							setIsImportingTransactions(false);
+						});
+					return;
+				}
+
+				if (transactionImportStep === 'preview') {
+					if (!transactionPreview) {
+						setCommandMessage('No preview available.');
+						return;
+					}
+
+					setIsImportingTransactions(true);
+					const selectedInstitution = institutionRows[transactionInstitutionIndex];
+					importTransactionsToDatabase({
+						institutionId: selectedInstitution.id,
+						transactions: transactionPreview.transactions
+					})
+						.then((count) => {
+							setCommandMessage(`Imported ${count} transactions.`);
+							setInstitutionRows((prev) => prev.map((item) => (
+								item.id === selectedInstitution.id
+									? {...item, lastUpdated: 'just now'}
+									: item
+							)));
+							setIsAddTransactionsModalOpen(false);
+							setTransactionImportStep('form');
+							setTransactionPreview(null);
+						})
+						.catch((error) => {
+							setCommandMessage(`Import failed: ${error.message}`);
+						})
+						.finally(() => {
+							setIsImportingTransactions(false);
+						});
+				}
+				return;
+			}
+
+			if (transactionImportStep === 'form') {
+				if (key.backspace || key.delete) {
+					setTransactionCsvPathInput((prev) => prev.slice(0, -1));
+					return;
+				}
+
+				if (!key.ctrl && !key.meta && input && input !== '\t') {
+					setTransactionCsvPathInput((prev) => prev + input);
+				}
+			}
+			return;
+		}
+
 		if (commandMode) {
 			if (key.escape) {
 				setCommandMode(false);
@@ -237,6 +350,18 @@ export function App() {
 					setCommandMessage('');
 					setIsAddInstitutionModalOpen(true);
 					setAddInstitutionNameInput('');
+					return;
+				}
+
+				if (commandToRun === 'add_transactions') {
+					setCommandMode(false);
+					setCommandInput('');
+					setSelectedSuggestionIndex(0);
+					setCommandMessage('');
+					setTransactionInstitutionIndex(0);
+					setTransactionImportStep('form');
+					setTransactionPreview(null);
+					setIsAddTransactionsModalOpen(true);
 					return;
 				}
 
@@ -449,6 +574,16 @@ export function App() {
 					<AddInstitutionModal
 						nameInput={addInstitutionNameInput}
 						isSaving={isCreatingInstitution}
+					/>
+				)}
+				{isAddTransactionsModalOpen && (
+					<AddTransactionsModal
+						institutions={institutionRows}
+						selectedInstitutionIndex={transactionInstitutionIndex}
+						csvPathInput={transactionCsvPathInput}
+						step={transactionImportStep}
+						preview={transactionPreview}
+						isBusy={isImportingTransactions}
 					/>
 				)}
 			</Box>

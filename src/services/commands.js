@@ -28,6 +28,11 @@ function normalizeCommandRegistryShape(parsed) {
 		changed = true;
 	}
 
+	if (!normalized.commands.add_transactions || typeof normalized.commands.add_transactions !== 'object') {
+		normalized.commands.add_transactions = {...DEFAULT_COMMAND_REGISTRY.commands.add_transactions};
+		changed = true;
+	}
+
 	return {normalized, changed};
 }
 

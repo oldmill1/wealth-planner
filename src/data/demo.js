@@ -36,6 +36,9 @@ export const DEFAULT_COMMAND_REGISTRY = {
 		},
 		add_institutions: {
 			description: 'Create a new institution for the active user.'
+		},
+		add_transactions: {
+			description: 'Import transactions from a CSV file into an institution.'
 		}
 	}
 };
