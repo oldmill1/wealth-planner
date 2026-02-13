@@ -10,6 +10,7 @@ const DB_PATH = path.join(CONFIG_DIR, 'main.json');
 const COMMANDS_PATH = path.join(CONFIG_DIR, 'commands.json');
 const DEFAULT_TIMEZONE = 'America/New_York';
 const INSTITUTION_TYPES = new Set(['BANK', 'CREDIT_CARD']);
+const TABS = ['Home', 'Institutions'];
 const DEFAULT_COMMAND_REGISTRY = {
 	version: 1,
 	commands: {
@@ -211,7 +212,14 @@ async function executeCommand(commandName) {
 	throw new Error(`Unknown command: /${commandName}`);
 }
 
-function renderTabs(terminalWidth) {
+function renderTabLabel(label, isActive) {
+	if (isActive) {
+		return React.createElement(Text, {backgroundColor: '#2a2b52', color: '#d4d6ff'}, `  ${label}  `);
+	}
+	return React.createElement(Text, {color: '#777898'}, label);
+}
+
+function renderTabs(terminalWidth, currentTab) {
 	const divider = '-'.repeat(Math.max(24, terminalWidth - 2));
 	return React.createElement(
 		Box,
@@ -229,9 +237,9 @@ function renderTabs(terminalWidth) {
 				alignItems: 'center'
 			},
 			React.createElement(Text, {color: '#3b3f70'}, '|  '),
-			React.createElement(Text, {backgroundColor: '#2a2b52', color: '#d4d6ff'}, '  Home  '),
+			renderTabLabel('Home', currentTab === 'Home'),
 			React.createElement(Text, {color: '#3b3f70'}, '  |  '),
-			React.createElement(Text, {color: '#777898'}, 'Institutions'),
+			renderTabLabel('Institutions', currentTab === 'Institutions'),
 			React.createElement(Text, {color: '#3b3f70'}, '  |')
 		),
 		React.createElement(
@@ -261,6 +269,7 @@ function App() {
 	const [commandInput, setCommandInput] = useState('');
 	const [commandMessage, setCommandMessage] = useState('');
 	const [isRunningCommand, setIsRunningCommand] = useState(false);
+	const [currentTab, setCurrentTab] = useState('Home');
 
 	useEffect(() => {
 		let mounted = true;
@@ -356,6 +365,15 @@ function App() {
 		if (input === '/') {
 			setCommandMode(true);
 			setCommandInput('');
+			return;
+		}
+
+		if (key.tab) {
+			setCurrentTab((prev) => {
+				const currentIndex = TABS.indexOf(prev);
+				const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % TABS.length;
+				return TABS[nextIndex];
+			});
 			return;
 		}
 
@@ -502,7 +520,7 @@ function App() {
 			flexDirection: 'column',
 			backgroundColor: '#161723'
 		},
-		renderTabs(terminalWidth),
+		renderTabs(terminalWidth, currentTab),
 		React.createElement(
 			Box,
 			{
