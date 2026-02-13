@@ -11,6 +11,35 @@ const COMMANDS_PATH = path.join(CONFIG_DIR, 'commands.json');
 const DEFAULT_TIMEZONE = 'America/New_York';
 const INSTITUTION_TYPES = new Set(['BANK', 'CREDIT_CARD']);
 const TABS = ['Home', 'Institutions'];
+const DEMO_INSTITUTIONS = [
+	{
+		id: 'inst_demo_bank_1',
+		type: 'BANK',
+		name: 'First National Bank Checking',
+		status: 'CONNECTED',
+		balance: '$12,480',
+		lastUpdated: '2m ago',
+		accountMask: '...9034'
+	},
+	{
+		id: 'inst_demo_cc_1',
+		type: 'CREDIT_CARD',
+		name: 'Capital One MasterCard',
+		status: 'NEEDS_ATTENTION',
+		balance: '$1,204',
+		lastUpdated: '45m ago',
+		accountMask: '...5501'
+	},
+	{
+		id: 'inst_demo_bank_2',
+		type: 'BANK',
+		name: 'Velocity Savings',
+		status: 'CONNECTED',
+		balance: '$44,920',
+		lastUpdated: '1h ago',
+		accountMask: '...1188'
+	}
+];
 const DEFAULT_COMMAND_REGISTRY = {
 	version: 1,
 	commands: {
@@ -253,6 +282,111 @@ function renderTabs(terminalWidth, currentTab) {
 	);
 }
 
+function pad(value, length) {
+	if (value.length >= length) {
+		return value.slice(0, length - 1) + '…';
+	}
+	return value + ' '.repeat(length - value.length);
+}
+
+function renderInstitutionRow(item, isSelected, leftPaneWidth) {
+	const safeWidth = Math.max(56, leftPaneWidth - 8);
+	const typeCol = 13;
+	const statusCol = 10;
+	const balanceCol = 10;
+	const updatedCol = 9;
+	const nameCol = Math.max(10, safeWidth - typeCol - statusCol - balanceCol - updatedCol - 9);
+	const line = `${pad(item.type, typeCol)} ${pad(item.name, nameCol)} ${pad(item.status, statusCol)} ${pad(item.balance, balanceCol)} ${pad(item.lastUpdated, updatedCol)}`;
+
+	return React.createElement(
+		Box,
+		{
+			key: item.id,
+			width: '100%',
+			paddingX: 1,
+			backgroundColor: isSelected ? '#24264a' : undefined
+		},
+		React.createElement(Text, {color: isSelected ? '#d4d6ff' : '#8f93bf'}, line)
+	);
+}
+
+function renderInstitutionsDashboard(terminalWidth, institutionRows) {
+	const selected = institutionRows[0] ?? null;
+	const leftPaneWidth = Math.max(56, Math.floor(terminalWidth * 0.62));
+	const rightPaneWidth = Math.max(28, terminalWidth - leftPaneWidth - 6);
+
+	if (institutionRows.length === 0) {
+		return React.createElement(
+			Box,
+			{
+				width: '100%',
+				paddingX: 2,
+				paddingY: 1,
+				flexDirection: 'column'
+			},
+			React.createElement(Text, {color: '#c5c8ff'}, 'Institutions'),
+			React.createElement(Text, {color: '#777898'}, 'No institutions found (mock state).')
+		);
+	}
+
+	return React.createElement(
+		Box,
+		{
+			width: '100%',
+			paddingX: 1,
+			paddingY: 1,
+			flexDirection: 'row'
+		},
+		React.createElement(
+			Box,
+			{
+				width: leftPaneWidth,
+				flexDirection: 'column',
+				paddingX: 1
+			},
+			React.createElement(Text, {color: '#7d83c8'}, ' [Search] institution:all status:any user:current'),
+			React.createElement(Text, {color: '#2f325a'}, '-'.repeat(Math.max(30, leftPaneWidth - 4))),
+			React.createElement(
+				Box,
+				{
+					width: '100%',
+					paddingX: 1
+				},
+				React.createElement(Text, {color: '#aeb2df'}, 'Type          Name                         Status     Balance    Updated')
+			),
+			React.createElement(Text, {color: '#2f325a'}, '-'.repeat(Math.max(30, leftPaneWidth - 4))),
+			...institutionRows.map((item, index) => renderInstitutionRow(item, index === 0, leftPaneWidth)),
+			React.createElement(Text, {color: '#2f325a'}, '-'.repeat(Math.max(30, leftPaneWidth - 4))),
+			React.createElement(Text, {color: '#777898'}, ' Demo UI only. Replace with real institutions data source.')
+		),
+		React.createElement(
+			Box,
+			{
+				width: 1
+			},
+			React.createElement(Text, {color: '#2f325a'}, '│')
+		),
+		React.createElement(
+			Box,
+			{
+				width: rightPaneWidth,
+				flexDirection: 'column',
+				paddingX: 1
+			},
+			React.createElement(Text, {color: '#aeb2df'}, `Selected Institution: ${selected?.name ?? '-'}`),
+			React.createElement(Text, {color: '#8f93bf'}, `Account: ${selected?.accountMask ?? '-'}`),
+			React.createElement(Text, {color: '#8f93bf'}, `Type: ${selected?.type ?? '-'}  Status: ${selected?.status ?? '-'}`),
+			React.createElement(Text, {color: '#8f93bf'}, `Balance: ${selected?.balance ?? '-'}  Updated: ${selected?.lastUpdated ?? '-'}`),
+			React.createElement(Text, {color: '#2f325a'}, '-'.repeat(Math.max(18, rightPaneWidth - 2))),
+			React.createElement(Text, {color: '#58d7a3'}, '• Sync healthy'),
+			React.createElement(Text, {color: '#58d7a3'}, '• Credentials valid'),
+			React.createElement(Text, {color: '#8f93bf'}, '• 0 pending alerts'),
+			React.createElement(Text, {color: '#2f325a'}, '-'.repeat(Math.max(18, rightPaneWidth - 2))),
+			React.createElement(Text, {color: '#777898'}, 'Actions (mock): Refresh | Rename | Disconnect')
+		)
+	);
+}
+
 function App() {
 	const {exit} = useApp();
 	const {stdout} = useStdout();
@@ -270,6 +404,7 @@ function App() {
 	const [commandMessage, setCommandMessage] = useState('');
 	const [isRunningCommand, setIsRunningCommand] = useState(false);
 	const [currentTab, setCurrentTab] = useState('Home');
+	const [institutionRows] = useState(DEMO_INSTITUTIONS);
 
 	useEffect(() => {
 		let mounted = true;
@@ -480,6 +615,20 @@ function App() {
 			];
 		}
 
+		if (bootState === 'ready' && currentTab === 'Institutions') {
+			return [
+				React.createElement(Text, {key: 'title', color: '#c5c8ff'}, 'Institutions Workspace'),
+				React.createElement(Text, {key: 'sub', color: '#777898'}, 'Mock layout for future real data wiring'),
+				React.createElement(Text, {key: 'spacer', color: '#777898'}, ''),
+				React.createElement(
+					Box,
+					{key: 'panel', width: '100%', flexDirection: 'column'},
+					renderInstitutionsDashboard(terminalWidth, institutionRows)
+				),
+				React.createElement(Text, {key: 'hint', color: '#777898'}, 'Press q to quit')
+			];
+		}
+
 		return [
 			React.createElement(Text, {key: 'title', color: 'blueBright'}, 'Wealth Planner'),
 			React.createElement(Text, {key: 'hello', color: '#777898'}, `Hello, ${user?.name ?? 'there'}`),
@@ -491,7 +640,7 @@ function App() {
 			React.createElement(Text, {key: 'hint', color: '#777898'}, 'Press / for command mode'),
 			React.createElement(Text, {key: 'hint2', color: '#777898'}, 'Press q to quit')
 		];
-	}, [bootState, errorMessage, nameInput, timezoneInput, user]);
+	}, [bootState, currentTab, errorMessage, institutionRows, nameInput, terminalWidth, timezoneInput, user]);
 
 	const fullContent = [...content];
 
@@ -527,8 +676,8 @@ function App() {
 				width: '100%',
 				flexGrow: 1,
 				flexDirection: 'column',
-				justifyContent: 'center',
-				alignItems: 'center'
+				justifyContent: currentTab === 'Institutions' ? 'flex-start' : 'center',
+				alignItems: currentTab === 'Institutions' ? 'stretch' : 'center'
 			},
 			...fullContent
 		)
