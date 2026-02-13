@@ -430,14 +430,14 @@ function App() {
 
 		return [
 			React.createElement(Text, {key: 'title', color: 'blueBright'}, 'Wealth Planner'),
-			React.createElement(Text, {key: 'hello', color: 'greenBright'}, `Hello, ${user?.name ?? 'there'}`),
+			React.createElement(Text, {key: 'hello', color: '#777898'}, `Hello, ${user?.name ?? 'there'}`),
 			React.createElement(
 				Text,
-				{key: 'tz', color: 'blue', dimColor: true},
+				{key: 'tz', color: '#777898'},
 				`Timezone: ${user?.timezone ?? DEFAULT_TIMEZONE}`
 			),
-			React.createElement(Text, {key: 'hint', color: 'blue', dimColor: true}, 'Press / for command mode'),
-			React.createElement(Text, {key: 'hint2', color: 'blue', dimColor: true}, 'Press q to quit')
+			React.createElement(Text, {key: 'hint', color: '#777898'}, 'Press / for command mode'),
+			React.createElement(Text, {key: 'hint2', color: '#777898'}, 'Press q to quit')
 		];
 	}, [bootState, errorMessage, nameInput, timezoneInput, user]);
 
@@ -467,7 +467,8 @@ function App() {
 			height: terminalHeight,
 			flexDirection: 'column',
 			justifyContent: 'center',
-			alignItems: 'center'
+			alignItems: 'center',
+			backgroundColor: '#161723'
 		},
 		...fullContent
 	);
