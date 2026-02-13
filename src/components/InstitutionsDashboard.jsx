@@ -34,7 +34,7 @@ function InstitutionRow({item, isSelected, leftPaneWidth}) {
 }
 
 export function InstitutionsDashboard({terminalWidth, institutionRows}) {
-	const selected = institutionRows[0] ?? null;
+	const realInstitutionCount = institutionRows.filter((item) => !item.isPlaceholder).length;
 	const leftPaneWidth = Math.max(56, Math.floor(terminalWidth * 0.62));
 	const rightPaneWidth = Math.max(28, terminalWidth - leftPaneWidth - 6);
 
@@ -57,24 +57,11 @@ export function InstitutionsDashboard({terminalWidth, institutionRows}) {
 				<Text color="#2f325a">│</Text>
 			</Box>
 			<Box width={rightPaneWidth} flexDirection="column" paddingX={1}>
+				<Text color="#c5c8ff">Institutions: {realInstitutionCount}</Text>
+				<Text color="#2f325a">{'-'.repeat(Math.max(18, rightPaneWidth - 2))}</Text>
 				<Text color="#aeb2df">
-					Selected Institution: {selected?.isPlaceholder ? 'Add First Institution' : selected?.name ?? '-'}
+					by <Text color="#d4d6ff">@wealth-planner</Text> • 1y ago • <Text color="#161723" backgroundColor="#58d7a3"> NEW </Text> none
 				</Text>
-				<Text color="#8f93bf">
-					Account: {selected?.isPlaceholder ? 'Create your first linked account' : selected?.accountMask ?? '-'}
-				</Text>
-				<Text color="#8f93bf">
-					Type: {selected?.isPlaceholder ? 'ACTION' : selected?.type ?? '-'}  Status: {selected?.status ?? '-'}
-				</Text>
-				<Text color="#8f93bf">
-					Balance: {selected?.isPlaceholder ? '--' : selected?.balance ?? '-'}  Updated: {selected?.lastUpdated ?? '-'}
-				</Text>
-				<Text color="#2f325a">{'-'.repeat(Math.max(18, rightPaneWidth - 2))}</Text>
-				<Text color="#58d7a3">• Sync healthy</Text>
-				<Text color="#58d7a3">• Credentials valid</Text>
-				<Text color="#8f93bf">• 0 pending alerts</Text>
-				<Text color="#2f325a">{'-'.repeat(Math.max(18, rightPaneWidth - 2))}</Text>
-				<Text color="#777898">Actions (mock): Refresh | Rename | Disconnect</Text>
 			</Box>
 		</Box>
 	);
