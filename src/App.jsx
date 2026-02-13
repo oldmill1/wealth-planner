@@ -294,11 +294,6 @@ export function App() {
 			return;
 		}
 
-		if (key.escape) {
-			exit();
-			return;
-		}
-
 		if (bootState === 'ready') {
 			if (input === 'q') {
 				exit();
