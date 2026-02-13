@@ -2,6 +2,7 @@ import React, {useEffect, useMemo, useState} from 'react';
 import {Box, Text, useApp, useInput, useStdout} from 'ink';
 
 import {DEFAULT_TIMEZONE, TABS} from './constants.js';
+import {BottomBar} from './components/BottomBar.jsx';
 import {InstitutionsDashboard} from './components/InstitutionsDashboard.jsx';
 import {Tabs} from './components/Tabs.jsx';
 import {loadOrInitDatabase, isValidTimezone, saveFirstUser} from './services/database.js';
@@ -38,6 +39,29 @@ function withEmptyInstitutionRow(rows) {
 	];
 }
 
+const TAB_COMMANDS = {
+	Home: ['clean_db'],
+	Institutions: []
+};
+
+function fuzzyMatch(query, value) {
+	if (!query) {
+		return true;
+	}
+
+	const q = query.toLowerCase();
+	const v = value.toLowerCase();
+	let qi = 0;
+
+	for (let vi = 0; vi < v.length && qi < q.length; vi += 1) {
+		if (v[vi] === q[qi]) {
+			qi += 1;
+		}
+	}
+
+	return qi === q.length;
+}
+
 export function App() {
 	const {exit} = useApp();
 	const {stdout} = useStdout();
@@ -56,6 +80,14 @@ export function App() {
 	const [isRunningCommand, setIsRunningCommand] = useState(false);
 	const [currentTab, setCurrentTab] = useState('Home');
 	const [institutionRows, setInstitutionRows] = useState([]);
+	const availableCommands = useMemo(() => {
+		const tabCommands = TAB_COMMANDS[currentTab] ?? [];
+		return tabCommands.filter((command) => Object.hasOwn(commands, command));
+	}, [commands, currentTab]);
+	const commandSuggestions = useMemo(() => {
+		const normalized = commandInput.trim().replace(/^\/+/, '');
+		return availableCommands.filter((command) => fuzzyMatch(normalized, command));
+	}, [availableCommands, commandInput]);
 
 	useEffect(() => {
 		let mounted = true;
@@ -109,19 +141,27 @@ export function App() {
 			if (key.return) {
 				const normalizedCommand = commandInput.trim().replace(/^\/+/, '');
 				if (!normalizedCommand) {
-					setCommandMessage('Enter a command. Example: /clean_db');
+					setCommandMessage('Enter a command.');
 					return;
 				}
-				if (!Object.hasOwn(commands, normalizedCommand)) {
-					setCommandMessage(`Unknown command: /${normalizedCommand}`);
+
+				let commandToRun = null;
+				if (availableCommands.includes(normalizedCommand)) {
+					commandToRun = normalizedCommand;
+				} else if (commandSuggestions.length === 1) {
+					commandToRun = commandSuggestions[0];
+				}
+
+				if (!commandToRun) {
+					setCommandMessage(`No command match for "/${normalizedCommand}" in ${currentTab}.`);
 					return;
 				}
 
 				setIsRunningCommand(true);
-				executeCommand(normalizedCommand)
+				executeCommand(commandToRun)
 					.then((message) => {
 						setCommandMessage(message);
-						if (normalizedCommand === 'clean_db') {
+						if (commandToRun === 'clean_db') {
 							setUser(null);
 							setInstitutionRows([]);
 							setNameInput('');
@@ -145,7 +185,7 @@ export function App() {
 				return;
 			}
 
-			if (!key.ctrl && !key.meta && input) {
+			if (!key.ctrl && !key.meta && input !== '\t') {
 				setCommandInput((prev) => prev + input);
 			}
 			return;
@@ -154,6 +194,7 @@ export function App() {
 		if (input === '/') {
 			setCommandMode(true);
 			setCommandInput('');
+			setCommandMessage('');
 			return;
 		}
 
@@ -303,7 +344,6 @@ export function App() {
 				<Text color="blueBright">Wealth Planner</Text>
 				<Text color="#777898">Hello, {user?.name ?? 'there'}</Text>
 				<Text color="#777898">Timezone: {user?.timezone ?? DEFAULT_TIMEZONE}</Text>
-				<Text color="#777898">Press / for command mode</Text>
 				<Text color="#777898">Press q to quit</Text>
 			</>
 		);
@@ -325,15 +365,15 @@ export function App() {
 				alignItems={currentTab === 'Institutions' ? 'stretch' : 'center'}
 			>
 				{content}
-				{commandMode && (
-					<>
-						<Text color="greenBright">/{commandInput || '|'}</Text>
-						<Text color="blue" dimColor>Command mode: press Enter to run, Esc to cancel</Text>
-					</>
-				)}
-				{isRunningCommand && <Text color="blueBright">Running command...</Text>}
-				{!isRunningCommand && commandMessage && <Text color="greenBright">{commandMessage}</Text>}
 			</Box>
+			<BottomBar
+				terminalWidth={terminalWidth}
+				commandMode={commandMode}
+				commandInput={commandInput}
+				suggestions={commandSuggestions}
+				commandMessage={commandMessage}
+				isRunningCommand={isRunningCommand}
+			/>
 		</Box>
 	);
 }

@@ -9,7 +9,7 @@ function TabLabel({label, isActive}) {
 }
 
 export function Tabs({terminalWidth, currentTab}) {
-	const divider = '-'.repeat(Math.max(24, terminalWidth - 2));
+	const divider = '-'.repeat(Math.max(24, terminalWidth - 4));
 
 	return (
 		<Box width="100%" flexDirection="column">
