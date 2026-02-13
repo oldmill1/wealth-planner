@@ -8,14 +8,6 @@ import {
 	useStdout
 } from 'ink';
 
-const asciiTitle = String.raw`
- _       __          ____  __       ____  __                           
-| |     / /__  ____ / / /_/ /_     / __ \/ /___ _____  ____  ___  _____
-| | /| / / _ \/ __  / __/ __ \   / /_/ / / __ '/ __ \/ __ \/ _ \/ ___/
-| |/ |/ /  __/ /_/ / /_/ / / /  / ____/ / /_/ / / / / / / /  __/ /    
-|__/|__/\___/\__,_/\__/_/ /_/  /_/   /_/\__,_/_/ /_/_/ /_/\___/_/     
-`;
-
 function App() {
 	const {exit} = useApp();
 	const {stdout} = useStdout();
@@ -37,9 +29,9 @@ function App() {
 			justifyContent: 'center',
 			alignItems: 'center'
 		},
-		React.createElement(Text, {color: 'cyan'}, asciiTitle),
-		React.createElement(Text, {color: 'whiteBright'}, 'Welcome to Wealth Planner'),
-		React.createElement(Text, {dimColor: true}, 'Press q to quit')
+		React.createElement(Text, {color: 'blueBright'}, 'Wealth Planner'),
+		React.createElement(Text, {color: 'greenBright'}, 'Welcome. Plan with calm, clear steps.'),
+		React.createElement(Text, {color: 'blue', dimColor: true}, 'Press q to quit')
 	);
 }
 
