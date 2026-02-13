@@ -1,0 +1,18 @@
+Metadata-Version: 2.4
+Name: wealth-planner
+Version: 0.1.0
+Summary: Textual hello world demo
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: textual>=0.70.0
+
+# Wealth Planner
+
+Simple Textual demo that displays an animated "Hello, World" in the terminal.
+
+## Run
+
+```bash
+python -m pip install -e .
+hello-tui
+```
