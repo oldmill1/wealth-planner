@@ -2,11 +2,41 @@ import React, {useEffect, useMemo, useState} from 'react';
 import {Box, Text, useApp, useInput, useStdout} from 'ink';
 
 import {DEFAULT_TIMEZONE, TABS} from './constants.js';
-import {DEMO_INSTITUTIONS} from './data/demo.js';
 import {InstitutionsDashboard} from './components/InstitutionsDashboard.jsx';
 import {Tabs} from './components/Tabs.jsx';
 import {loadOrInitDatabase, isValidTimezone, saveFirstUser} from './services/database.js';
 import {executeCommand, loadOrInitCommandRegistry} from './services/commands.js';
+
+function mapInstitutionToRow(institution) {
+	return {
+		id: institution.id,
+		type: institution.type,
+		name: institution.name,
+		status: 'CONNECTED',
+		balance: '--',
+		lastUpdated: 'just now',
+		accountMask: '...'
+	};
+}
+
+function withEmptyInstitutionRow(rows) {
+	if (rows.length > 0) {
+		return rows;
+	}
+
+	return [
+		{
+			id: 'add_first_institution',
+			type: 'ACTION',
+			name: 'Add First Institution',
+			status: '',
+			balance: '',
+			lastUpdated: '',
+			accountMask: '',
+			isPlaceholder: true
+		}
+	];
+}
 
 export function App() {
 	const {exit} = useApp();
@@ -25,7 +55,7 @@ export function App() {
 	const [commandMessage, setCommandMessage] = useState('');
 	const [isRunningCommand, setIsRunningCommand] = useState(false);
 	const [currentTab, setCurrentTab] = useState('Home');
-	const [institutionRows] = useState(DEMO_INSTITUTIONS);
+	const [institutionRows, setInstitutionRows] = useState([]);
 
 	useEffect(() => {
 		let mounted = true;
@@ -46,6 +76,7 @@ export function App() {
 					return;
 				}
 				setUser(bios.user);
+				setInstitutionRows((bios.institutions ?? []).map(mapInstitutionToRow));
 				setBootState('ready');
 			} catch (error) {
 				if (!mounted) {
@@ -92,6 +123,7 @@ export function App() {
 						setCommandMessage(message);
 						if (normalizedCommand === 'clean_db') {
 							setUser(null);
+							setInstitutionRows([]);
 							setNameInput('');
 							setTimezoneInput(DEFAULT_TIMEZONE);
 							setBootState('wizard_name');
@@ -182,6 +214,7 @@ export function App() {
 				saveFirstUser(trimmedName, trimmedTimezone)
 					.then((savedUser) => {
 						setUser(savedUser);
+						setInstitutionRows([]);
 						setBootState('ready');
 					})
 					.catch((error) => {
@@ -250,13 +283,15 @@ export function App() {
 		}
 
 		if (bootState === 'ready' && currentTab === 'Institutions') {
+			const tableRows = withEmptyInstitutionRow(institutionRows);
+
 			return (
 				<>
 					<Text color="#c5c8ff">Institutions Workspace</Text>
-					<Text color="#777898">Mock layout for future real data wiring</Text>
+					<Text color="#777898">Loaded from local database</Text>
 					<Text color="#777898"> </Text>
 					<Box width="100%" flexDirection="column">
-						<InstitutionsDashboard terminalWidth={terminalWidth} institutionRows={institutionRows} />
+						<InstitutionsDashboard terminalWidth={terminalWidth} institutionRows={tableRows} />
 					</Box>
 					<Text color="#777898">Press q to quit</Text>
 				</>

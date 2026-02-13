@@ -114,12 +114,16 @@ export async function loadOrInitDatabase() {
 			await fs.writeFile(DB_PATH, JSON.stringify(normalized, null, 2), 'utf8');
 		}
 		const firstUser = normalized.users?.[0] ?? null;
-		return {firstRun: false, user: firstUser};
+		return {
+			firstRun: false,
+			user: firstUser,
+			institutions: normalized.institutions ?? []
+		};
 	} catch (error) {
 		if (error && error.code !== 'ENOENT') {
 			throw error;
 		}
-		return {firstRun: true, user: null};
+		return {firstRun: true, user: null, institutions: []};
 	}
 }
 
