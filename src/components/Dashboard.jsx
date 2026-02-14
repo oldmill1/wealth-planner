@@ -1,12 +1,63 @@
 import React from 'react';
 import {Box, Text} from 'ink';
 
+const COLUMNS = [
+	{
+		key: 'type',
+		label: 'Type',
+		minWidth: 13,
+		formatter: (item) => item.type
+	},
+	{
+		key: 'name',
+		label: 'Name',
+		minWidth: 10,
+		formatter: (item) => item.name
+	},
+	{
+		key: 'status',
+		label: 'Status',
+		minWidth: 16,
+		formatter: (item) => item.status
+	},
+	{
+		key: 'balance',
+		label: 'Balance',
+		minWidth: 10,
+		formatter: (item) => item.balance
+	},
+	{
+		key: 'lastUpdated',
+		label: 'Updated',
+		minWidth: 9,
+		formatter: (item) => item.lastUpdated
+	}
+];
+
 function pad(value, length) {
 	const text = String(value ?? '');
 	if (text.length >= length) {
 		return text.slice(0, length - 1) + '…';
 	}
 	return text + ' '.repeat(length - text.length);
+}
+
+function computeColumnWidths(safeWidth) {
+	const spacingWidth = COLUMNS.length - 1;
+	const minimumContentWidth = COLUMNS.reduce((sum, column) => sum + column.minWidth, 0);
+	const remainingWidth = Math.max(0, safeWidth - minimumContentWidth - spacingWidth);
+
+	return COLUMNS.map((column) => (
+		column.key === 'name'
+			? column.minWidth + remainingWidth
+			: column.minWidth
+	));
+}
+
+function renderTableLine(item, columnWidths) {
+	return COLUMNS.map((column, index) => (
+		pad(column.formatter(item), columnWidths[index])
+	)).join(' ');
 }
 
 function InstitutionRow({item, isSelected, leftPaneWidth}) {
@@ -19,12 +70,8 @@ function InstitutionRow({item, isSelected, leftPaneWidth}) {
 	}
 
 	const safeWidth = Math.max(56, leftPaneWidth - 8);
-	const typeCol = 13;
-	const statusCol = 16;
-	const balanceCol = 10;
-	const updatedCol = 9;
-	const nameCol = Math.max(10, safeWidth - typeCol - statusCol - balanceCol - updatedCol - 9);
-	const line = `${pad(item.type, typeCol)} ${pad(item.name, nameCol)} ${pad(item.status, statusCol)} ${pad(item.balance, balanceCol)} ${pad(item.lastUpdated, updatedCol)}`;
+	const columnWidths = computeColumnWidths(safeWidth);
+	const line = renderTableLine(item, columnWidths);
 
 	return (
 		<Box width="100%" paddingX={1} backgroundColor={isSelected ? '#24264a' : undefined}>
@@ -35,7 +82,7 @@ function InstitutionRow({item, isSelected, leftPaneWidth}) {
 
 export function Dashboard({
 	terminalWidth,
-	institutionRows,
+	accountRows,
 	searchLabel = 'institution:all',
 	summaryLabel = 'Institutions',
 	hasBalances = false,
@@ -44,6 +91,10 @@ export function Dashboard({
 	const leftPaneWidth = Math.max(56, Math.floor(terminalWidth * 0.62));
 	const rightPaneWidth = Math.max(28, terminalWidth - leftPaneWidth - 6);
 	const checklistWidth = Math.max(24, rightPaneWidth - 2);
+	const tableHeader = renderTableLine(
+		Object.fromEntries(COLUMNS.map((column) => [column.key, column.label])),
+		computeColumnWidths(Math.max(56, leftPaneWidth - 8))
+	);
 
 	return (
 		<Box width="100%" paddingX={1} paddingY={1} flexDirection="row">
@@ -51,10 +102,10 @@ export function Dashboard({
 				<Text color="#7d83c8"> [Search] {searchLabel} status:any user:current</Text>
 				<Text color="#2f325a">{'-'.repeat(Math.max(30, leftPaneWidth - 4))}</Text>
 				<Box width="100%" paddingX={1}>
-					<Text color="#aeb2df">Type          Name                         Status           Balance    Updated</Text>
+					<Text color="#aeb2df">{tableHeader}</Text>
 				</Box>
 				<Text color="#2f325a">{'-'.repeat(Math.max(30, leftPaneWidth - 4))}</Text>
-				{institutionRows.map((item, index) => (
+				{accountRows.map((item, index) => (
 					<InstitutionRow key={item.id} item={item} isSelected={index === 0} leftPaneWidth={leftPaneWidth} />
 				))}
 				<Text color="#2f325a">{'-'.repeat(Math.max(30, leftPaneWidth - 4))}</Text>

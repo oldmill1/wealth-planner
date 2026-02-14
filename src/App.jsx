@@ -93,7 +93,7 @@ export function App() {
 	const [commandMessage, setCommandMessage] = useState('');
 	const [isRunningCommand, setIsRunningCommand] = useState(false);
 	const [currentTab, setCurrentTab] = useState('Home');
-	const [institutionRows, setInstitutionRows] = useState([]);
+	const [accountRows, setAccountRows] = useState([]);
 	const [isAddInstitutionModalOpen, setIsAddInstitutionModalOpen] = useState(false);
 	const [addInstitutionNameInput, setAddInstitutionNameInput] = useState('');
 	const [addInstitutionTypeInput, setAddInstitutionTypeInput] = useState('');
@@ -123,8 +123,8 @@ export function App() {
 		if (!uploadTargetTypes) {
 			return [];
 		}
-		return institutionRows.filter((row) => uploadTargetTypes.has(row.type));
-	}, [institutionRows, uploadTargetTypes]);
+		return accountRows.filter((row) => uploadTargetTypes.has(row.type));
+	}, [accountRows, uploadTargetTypes]);
 	const availableCommands = useMemo(() => {
 		const tabCommands = TAB_COMMANDS[currentTab] ?? [];
 		return tabCommands.filter((command) => Object.hasOwn(commands, command));
@@ -167,7 +167,7 @@ export function App() {
 					return;
 				}
 				setUser(bios.user);
-				setInstitutionRows((bios.accounts ?? bios.institutions ?? []).map(mapInstitutionToRow));
+				setAccountRows((bios.accounts ?? bios.institutions ?? []).map(mapInstitutionToRow));
 				setBootState('ready');
 			} catch (error) {
 				if (!mounted) {
@@ -229,7 +229,7 @@ export function App() {
 				const composedName = `${trimmedName} ${trimmedType} Account`;
 				addInstitutionForUser({userId: user.id, name: composedName})
 					.then((institution) => {
-						setInstitutionRows((prev) => [...prev, mapInstitutionToRow(institution)]);
+						setAccountRows((prev) => [...prev, mapInstitutionToRow(institution)]);
 						setCommandMessage(`Institution "${institution.name}" created.`);
 						setIsAddInstitutionModalOpen(false);
 						setAddInstitutionNameInput('');
@@ -304,7 +304,7 @@ export function App() {
 				const composedName = `${trimmedInstitutionName} ${trimmedLastFour} Credit Card`;
 				addInstitutionForUser({userId: user.id, name: composedName, type: 'CREDIT'})
 					.then((account) => {
-						setInstitutionRows((prev) => [...prev, mapInstitutionToRow(account)]);
+						setAccountRows((prev) => [...prev, mapInstitutionToRow(account)]);
 						setCommandMessage(`Credit account "${account.name}" created.`);
 						setIsAddCreditAccountModalOpen(false);
 						setCreditInstitutionNameInput('');
@@ -411,7 +411,7 @@ export function App() {
 					})
 						.then((count) => {
 							setCommandMessage(`Imported ${count} transactions.`);
-							setInstitutionRows((prev) => prev.map((item) => (
+							setAccountRows((prev) => prev.map((item) => (
 								item.id === selectedInstitution.id
 									? {...item, lastUpdated: 'just now'}
 									: item
@@ -525,7 +525,7 @@ export function App() {
 						setCommandMessage(message);
 						if (commandToRun === 'clean_db') {
 							setUser(null);
-							setInstitutionRows([]);
+							setAccountRows([]);
 							setNameInput('');
 							setTimezoneInput(DEFAULT_TIMEZONE);
 							setBootState('wizard_name');
@@ -614,7 +614,7 @@ export function App() {
 				saveFirstUser(trimmedName, trimmedTimezone)
 					.then((savedUser) => {
 						setUser(savedUser);
-						setInstitutionRows([]);
+						setAccountRows([]);
 						setBootState('ready');
 					})
 					.catch((error) => {
@@ -634,7 +634,7 @@ export function App() {
 	});
 
 	const content = useMemo(() => {
-		const currentUserRows = institutionRows.filter((row) => row.userId === user?.id);
+		const currentUserRows = accountRows.filter((row) => row.userId === user?.id);
 		const hasBalances = currentUserRows.some((row) => row.type === 'BANK');
 		const hasCredits = currentUserRows.some((row) => row.type === 'CREDIT' || row.type === 'CREDIT_CARD');
 
@@ -702,7 +702,7 @@ export function App() {
 					<Box width="100%" flexDirection="column">
 						<Dashboard
 							terminalWidth={terminalWidth}
-							institutionRows={tableRows}
+							accountRows={tableRows}
 							searchLabel="institution:all"
 							summaryLabel="Balances"
 							hasBalances={hasBalances}
@@ -730,7 +730,7 @@ export function App() {
 					<Box width="100%" flexDirection="column">
 						<Dashboard
 							terminalWidth={terminalWidth}
-							institutionRows={tableRows}
+							accountRows={tableRows}
 							searchLabel="credit_card:all"
 							summaryLabel="Credit Cards"
 							hasBalances={hasBalances}
@@ -750,7 +750,7 @@ export function App() {
 				<Text color="#777898">Press q to quit</Text>
 			</>
 		);
-	}, [bootState, currentTab, errorMessage, institutionRows, nameInput, terminalWidth, timezoneInput, user]);
+	}, [bootState, currentTab, errorMessage, accountRows, nameInput, terminalWidth, timezoneInput, user]);
 
 	return (
 		<Box
