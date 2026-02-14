@@ -158,14 +158,27 @@ function formatAmount(amountCents) {
 	return `${sign}$${absolute}`;
 }
 
+function formatPostedDateHuman(postedAtRaw) {
+	const postedAt = String(postedAtRaw ?? '').trim();
+	const parsed = new Date(`${postedAt}T00:00:00`);
+	if (Number.isNaN(parsed.getTime())) {
+		return postedAt || 'Unknown';
+	}
+	return parsed.toLocaleDateString('en-US', {
+		month: '2-digit',
+		day: '2-digit',
+		year: '2-digit'
+	});
+}
+
 function formatTransactionLine(item, width) {
-	const postedAt = String(item.posted_at ?? '').trim() || '---- -- --';
+	const postedAt = formatPostedDateHuman(item.posted_at);
 	const amount = formatAmount(item.amount_cents);
-	const description = String(item.description_raw ?? '').replace(/\s+/g, ' ').trim() || 'Unknown';
+	const categoryPath = String(item.category_path ?? '').replace(/\s+/g, ' ').trim() || 'Uncategorized';
 	const amountWidth = 10;
-	const dateWidth = 10;
+	const dateWidth = 12;
 	const descWidth = Math.max(8, width - dateWidth - amountWidth - 2);
-	return `${pad(postedAt, dateWidth)} ${pad(description, descWidth)} ${pad(amount, amountWidth)}`;
+	return `${pad(postedAt, dateWidth)} ${pad(categoryPath, descWidth)} ${pad(amount, amountWidth)}`;
 }
 
 export function Dashboard({
