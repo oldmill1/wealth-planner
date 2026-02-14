@@ -51,6 +51,28 @@ function normalizeInstitution(record) {
 	return isValidInstitution(normalized) ? normalized : null;
 }
 
+function normalizeUserActivity(record) {
+	if (record === null || typeof record !== 'object') {
+		return null;
+	}
+
+	if (
+		typeof record.id !== 'string' ||
+		typeof record.user_id !== 'string' ||
+		typeof record.datetime !== 'string' ||
+		typeof record.message !== 'string'
+	) {
+		return null;
+	}
+
+	return {
+		id: record.id,
+		user_id: record.user_id,
+		datetime: record.datetime,
+		message: record.message
+	};
+}
+
 function normalizeDatabaseShape(parsed) {
 	let changed = false;
 	const normalized = parsed && typeof parsed === 'object' ? {...parsed} : {};
@@ -100,6 +122,19 @@ function normalizeDatabaseShape(parsed) {
 		changed = true;
 	}
 
+	if (!Array.isArray(normalized.user_activity)) {
+		normalized.user_activity = [];
+		changed = true;
+	} else {
+		const sanitizedUserActivity = normalized.user_activity
+			.map(normalizeUserActivity)
+			.filter((activity) => activity !== null);
+		if (sanitizedUserActivity.length !== normalized.user_activity.length) {
+			changed = true;
+		}
+		normalized.user_activity = sanitizedUserActivity;
+	}
+
 	if (changed) {
 		normalized.meta = {
 			...normalized.meta,
@@ -120,7 +155,8 @@ function createDatabase(user) {
 		},
 		users: [user],
 		accounts: [],
-		transactions: []
+		transactions: [],
+		user_activity: []
 	};
 }
 
@@ -138,13 +174,14 @@ export async function loadOrInitDatabase() {
 			firstRun: false,
 			user: firstUser,
 			accounts: normalized.accounts ?? [],
-			transactions: normalized.transactions ?? []
+			transactions: normalized.transactions ?? [],
+			userActivity: normalized.user_activity ?? []
 		};
 	} catch (error) {
 		if (error && error.code !== 'ENOENT') {
 			throw error;
 		}
-		return {firstRun: true, user: null, accounts: [], transactions: []};
+		return {firstRun: true, user: null, accounts: [], transactions: [], userActivity: []};
 	}
 }
 
@@ -176,8 +213,18 @@ export async function addInstitutionForUser({userId, name}) {
 		created_at: now,
 		updated_at: now
 	};
+	const activityMessage = institution.type === 'CREDIT_CARD'
+		? 'New Credit Card Added'
+		: 'New Deposit Account Added';
+	const activityRecord = {
+		id: crypto.randomUUID(),
+		user_id: userId,
+		datetime: now,
+		message: activityMessage
+	};
 
 	normalized.accounts = [...(normalized.accounts ?? []), institution];
+	normalized.user_activity = [...(normalized.user_activity ?? []), activityRecord];
 	normalized.meta = {
 		...normalized.meta,
 		updated_at: now
