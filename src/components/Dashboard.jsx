@@ -127,9 +127,52 @@ function InstitutionRow({item, isSelected, leftPaneWidth}) {
 	);
 }
 
+function accountRowHeight(item) {
+	return item.isPlaceholder ? 1 : 2;
+}
+
+function selectAccountRowsForHeight(accountRows, maxLines) {
+	const selected = [];
+	let usedLines = 0;
+
+	for (const row of accountRows) {
+		const nextHeight = accountRowHeight(row);
+		if (selected.length > 0 && usedLines + nextHeight > maxLines) {
+			break;
+		}
+		if (selected.length === 0 && nextHeight > maxLines) {
+			selected.push(row);
+			usedLines = nextHeight;
+			break;
+		}
+		selected.push(row);
+		usedLines += nextHeight;
+	}
+
+	return {rows: selected, usedLines};
+}
+
+function formatAmount(amountCents) {
+	const absolute = (Math.abs(Number(amountCents) || 0) / 100).toFixed(2);
+	const sign = Number(amountCents) < 0 ? '-' : '+';
+	return `${sign}$${absolute}`;
+}
+
+function formatTransactionLine(item, width) {
+	const postedAt = String(item.posted_at ?? '').trim() || '---- -- --';
+	const amount = formatAmount(item.amount_cents);
+	const description = String(item.description_raw ?? '').replace(/\s+/g, ' ').trim() || 'Unknown';
+	const amountWidth = 10;
+	const dateWidth = 10;
+	const descWidth = Math.max(8, width - dateWidth - amountWidth - 2);
+	return `${pad(postedAt, dateWidth)} ${pad(description, descWidth)} ${pad(amount, amountWidth)}`;
+}
+
 export function Dashboard({
 	terminalWidth,
+	terminalHeight,
 	accountRows,
+	transactionRows = [],
 	searchLabel = 'institution:all',
 	summaryLabel = 'Institutions',
 	hasBalances = false,
@@ -138,9 +181,17 @@ export function Dashboard({
 	const leftPaneWidth = Math.max(56, Math.floor(terminalWidth * 0.62));
 	const rightPaneWidth = Math.max(28, terminalWidth - leftPaneWidth - 6);
 	const checklistWidth = Math.max(24, rightPaneWidth - 2);
+	const safeTableWidth = Math.max(56, leftPaneWidth - 8);
+	const estimatedAvailableLines = Math.max(12, terminalHeight - 12);
+	const fixedLeftPaneLines = 8;
+	const minTransactionLines = 2;
+	const accountLinesBudget = Math.max(1, estimatedAvailableLines - fixedLeftPaneLines - minTransactionLines);
+	const {rows: visibleAccountRows, usedLines: usedAccountLines} = selectAccountRowsForHeight(accountRows, accountLinesBudget);
+	const transactionLinesBudget = Math.max(1, estimatedAvailableLines - fixedLeftPaneLines - usedAccountLines);
+	const visibleTransactionRows = transactionRows.slice(0, transactionLinesBudget);
 	const tableHeader = renderTableLine(
 		Object.fromEntries(COLUMNS.map((column) => [column.key, column.label])),
-		computeColumnWidths(Math.max(56, leftPaneWidth - 8))
+		computeColumnWidths(safeTableWidth)
 	);
 
 	return (
@@ -151,10 +202,19 @@ export function Dashboard({
 					<Text color="#aeb2df">{tableHeader}</Text>
 				</Box>
 				<Text color="#2f325a">{'-'.repeat(Math.max(30, leftPaneWidth - 4))}</Text>
-				{accountRows.map((item, index) => (
+				{visibleAccountRows.map((item, index) => (
 					<InstitutionRow key={item.id} item={item} isSelected={index === 0} leftPaneWidth={leftPaneWidth} />
 				))}
 				<Text color="#2f325a">{'-'.repeat(Math.max(30, leftPaneWidth - 4))}</Text>
+				<Text color="#7d83c8"> Recent Transactions</Text>
+				<Text color="#2f325a">{'-'.repeat(Math.max(30, leftPaneWidth - 4))}</Text>
+				{visibleTransactionRows.length === 0 && (
+					<Text color="#6f7396"> No transactions yet</Text>
+				)}
+				{visibleTransactionRows.map((item) => (
+					<Text key={item.id} color="#8f93bf"> {formatTransactionLine(item, Math.max(30, leftPaneWidth - 6))}</Text>
+				))}
+				<Text color="#777898"> Source: ~/.config/wealth-planner/main.json</Text>
 			</Box>
 			<Box width={1}>
 				<Text color="#2f325a">│</Text>

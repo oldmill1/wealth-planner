@@ -135,6 +135,7 @@ export function App() {
 	const [transactionImportStep, setTransactionImportStep] = useState('form');
 	const [transactionPreview, setTransactionPreview] = useState(null);
 	const [isImportingTransactions, setIsImportingTransactions] = useState(false);
+	const [transactions, setTransactions] = useState([]);
 	const uploadTargetTypes = useMemo(() => {
 		if (currentTab === 'Balances') {
 			return new Set(['BANK']);
@@ -193,6 +194,7 @@ export function App() {
 				}
 				setUser(bios.user);
 				setAccountRows((bios.accounts ?? bios.institutions ?? []).map(mapInstitutionToRow));
+				setTransactions(bios.transactions ?? []);
 				setBootState('ready');
 			} catch (error) {
 				if (!mounted) {
@@ -437,6 +439,7 @@ export function App() {
 						.then((count) => {
 							setCommandMessage(`Imported ${count} transactions.`);
 							const nowIso = new Date().toISOString();
+							setTransactions((prev) => [...prev, ...transactionPreview.transactions]);
 							setAccountRows((prev) => prev.map((item) => (
 								item.id === selectedInstitution.id
 									? {...item, updatedAt: nowIso, lastUpdated: formatLastUpdated(nowIso)}
@@ -552,6 +555,7 @@ export function App() {
 						if (commandToRun === 'clean_db') {
 							setUser(null);
 							setAccountRows([]);
+							setTransactions([]);
 							setNameInput('');
 							setTimezoneInput(DEFAULT_TIMEZONE);
 							setBootState('wizard_name');
@@ -641,6 +645,7 @@ export function App() {
 					.then((savedUser) => {
 						setUser(savedUser);
 						setAccountRows([]);
+						setTransactions([]);
 						setBootState('ready');
 					})
 					.catch((error) => {
@@ -714,6 +719,10 @@ export function App() {
 
 		if (bootState === 'ready' && currentTab === 'Balances') {
 			const institutionOnlyRows = currentUserRows.filter((row) => row.type === 'BANK');
+			const balanceAccountIds = new Set(institutionOnlyRows.map((row) => row.id));
+			const balanceTransactions = transactions
+				.filter((item) => item.user_id === user?.id && balanceAccountIds.has(item.institution_id))
+				.sort((a, b) => String(b.posted_at).localeCompare(String(a.posted_at)));
 			const tableRows = withEmptyInstitutionRow(
 				institutionOnlyRows,
 				'Add First Deposit Account',
@@ -726,7 +735,9 @@ export function App() {
 					<Box width="100%" flexDirection="column">
 						<Dashboard
 							terminalWidth={terminalWidth}
+							terminalHeight={terminalHeight}
 							accountRows={tableRows}
+							transactionRows={balanceTransactions}
 							searchLabel="institution:all"
 							summaryLabel="Balances"
 							hasBalances={hasBalances}
@@ -739,6 +750,10 @@ export function App() {
 
 		if (bootState === 'ready' && currentTab === 'Credit') {
 			const creditCardRows = currentUserRows.filter((row) => row.type === 'CREDIT' || row.type === 'CREDIT_CARD');
+			const creditAccountIds = new Set(creditCardRows.map((row) => row.id));
+			const creditTransactions = transactions
+				.filter((item) => item.user_id === user?.id && creditAccountIds.has(item.institution_id))
+				.sort((a, b) => String(b.posted_at).localeCompare(String(a.posted_at)));
 			const tableRows = withEmptyInstitutionRow(
 				creditCardRows,
 				'Add First Credit Card',
@@ -751,7 +766,9 @@ export function App() {
 					<Box width="100%" flexDirection="column">
 						<Dashboard
 							terminalWidth={terminalWidth}
+							terminalHeight={terminalHeight}
 							accountRows={tableRows}
+							transactionRows={creditTransactions}
 							searchLabel="credit_card:all"
 							summaryLabel="Credit Cards"
 							hasBalances={hasBalances}
@@ -770,7 +787,7 @@ export function App() {
 				<Text color="#777898">Press q to quit</Text>
 			</>
 		);
-	}, [bootState, currentTab, errorMessage, accountRows, nameInput, terminalWidth, timezoneInput, user]);
+	}, [bootState, currentTab, errorMessage, accountRows, nameInput, terminalHeight, terminalWidth, timezoneInput, transactions, user]);
 
 	return (
 		<Box
