@@ -193,10 +193,13 @@ export async function saveFirstUser(name, timezone) {
 	return user;
 }
 
-export async function addInstitutionForUser({userId, name}) {
+export async function addInstitutionForUser({userId, name, type = 'BANK'}) {
 	const trimmedName = name.trim();
 	if (!trimmedName) {
 		throw new Error('Institution name is required.');
+	}
+	if (!isValidInstitutionType(type)) {
+		throw new Error(`Invalid account type: ${type}`);
 	}
 
 	const raw = await fs.readFile(DB_PATH, 'utf8');
@@ -207,13 +210,13 @@ export async function addInstitutionForUser({userId, name}) {
 	const institution = {
 		id: crypto.randomUUID(),
 		user_id: userId,
-		type: 'BANK',
+		type,
 		name: trimmedName,
 		transaction_ids: [],
 		created_at: now,
 		updated_at: now
 	};
-	const activityMessage = institution.type === 'CREDIT_CARD'
+	const activityMessage = institution.type === 'CREDIT_CARD' || institution.type === 'CREDIT'
 		? 'New Credit Card Added'
 		: 'New Deposit Account Added';
 	const activityRecord = {

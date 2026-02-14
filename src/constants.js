@@ -6,5 +6,5 @@ export const DB_PATH = path.join(CONFIG_DIR, 'main.json');
 export const COMMANDS_PATH = path.join(CONFIG_DIR, 'commands.json');
 
 export const DEFAULT_TIMEZONE = 'America/New_York';
-export const INSTITUTION_TYPES = new Set(['BANK', 'CREDIT_CARD']);
+export const INSTITUTION_TYPES = new Set(['BANK', 'CREDIT', 'CREDIT_CARD']);
 export const TABS = ['Home', 'Balances', 'Credit'];

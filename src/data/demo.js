@@ -37,6 +37,9 @@ export const DEFAULT_COMMAND_REGISTRY = {
 		add_deposit_account: {
 			description: 'Create a new deposit account for the active user.'
 		},
+		add_credit_account: {
+			description: 'Create a new credit account for the active user.'
+		},
 		upload_csv: {
 			description: 'Import transactions from a CSV file into an account.'
 		}

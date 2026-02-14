@@ -1,6 +1,7 @@
 import React, {useEffect, useMemo, useState} from 'react';
 import {Box, Text, useApp, useInput, useStdout} from 'ink';
 
+import {AddCreditAccountModal} from './components/AddCreditAccountModal.jsx';
 import {AddInstitutionModal} from './components/AddInstitutionModal.jsx';
 import {AddTransactionsModal} from './components/AddTransactionsModal.jsx';
 import {DEFAULT_TIMEZONE, TABS} from './constants.js';
@@ -52,7 +53,7 @@ function withEmptyInstitutionRow(rows, placeholderLabel = 'Add First Deposit Acc
 const TAB_COMMANDS = {
 	Home: ['clean_db'],
 	Balances: ['add_deposit_account', 'upload_csv'],
-	Credit: ['upload_csv']
+	Credit: ['add_credit_account', 'upload_csv']
 };
 
 function fuzzyMatch(query, value) {
@@ -97,27 +98,32 @@ export function App() {
 	const [addInstitutionTypeInput, setAddInstitutionTypeInput] = useState('');
 	const [addInstitutionStep, setAddInstitutionStep] = useState('name');
 	const [isCreatingInstitution, setIsCreatingInstitution] = useState(false);
+	const [isAddCreditAccountModalOpen, setIsAddCreditAccountModalOpen] = useState(false);
+	const [creditInstitutionNameInput, setCreditInstitutionNameInput] = useState('');
+	const [creditLastFourInput, setCreditLastFourInput] = useState('');
+	const [creditAccountStep, setCreditAccountStep] = useState('institution');
+	const [isCreatingCreditAccount, setIsCreatingCreditAccount] = useState(false);
 	const [isAddTransactionsModalOpen, setIsAddTransactionsModalOpen] = useState(false);
 	const [transactionInstitutionIndex, setTransactionInstitutionIndex] = useState(0);
 	const [transactionCsvPathInput, setTransactionCsvPathInput] = useState('~/Downloads/SIMPLII.csv');
 	const [transactionImportStep, setTransactionImportStep] = useState('form');
 	const [transactionPreview, setTransactionPreview] = useState(null);
 	const [isImportingTransactions, setIsImportingTransactions] = useState(false);
-	const uploadTargetType = useMemo(() => {
+	const uploadTargetTypes = useMemo(() => {
 		if (currentTab === 'Balances') {
-			return 'BANK';
+			return new Set(['BANK']);
 		}
 		if (currentTab === 'Credit') {
-			return 'CREDIT_CARD';
+			return new Set(['CREDIT', 'CREDIT_CARD']);
 		}
 		return null;
 	}, [currentTab]);
 	const transactionInstitutionRows = useMemo(() => {
-		if (!uploadTargetType) {
+		if (!uploadTargetTypes) {
 			return [];
 		}
-		return institutionRows.filter((row) => row.type === uploadTargetType);
-	}, [institutionRows, uploadTargetType]);
+		return institutionRows.filter((row) => uploadTargetTypes.has(row.type));
+	}, [institutionRows, uploadTargetTypes]);
 	const availableCommands = useMemo(() => {
 		const tabCommands = TAB_COMMANDS[currentTab] ?? [];
 		return tabCommands.filter((command) => Object.hasOwn(commands, command));
@@ -252,6 +258,81 @@ export function App() {
 					setAddInstitutionNameInput((prev) => prev + input);
 				} else {
 					setAddInstitutionTypeInput((prev) => prev + input);
+				}
+			}
+			return;
+		}
+
+		if (isAddCreditAccountModalOpen) {
+			if (key.escape) {
+				setIsAddCreditAccountModalOpen(false);
+				setCreditInstitutionNameInput('');
+				setCreditLastFourInput('');
+				setCreditAccountStep('institution');
+				setCommandMessage('Add credit account cancelled.');
+				return;
+			}
+
+			if (key.return) {
+				const trimmedInstitutionName = creditInstitutionNameInput.trim();
+				const trimmedLastFour = creditLastFourInput.trim();
+				if (creditAccountStep === 'institution') {
+					if (!trimmedInstitutionName) {
+						setCommandMessage('Institution name is required.');
+						return;
+					}
+					setCreditAccountStep('last_four');
+					return;
+				}
+
+				if (!/^\d{4}$/.test(trimmedLastFour)) {
+					setCommandMessage('Last 4 must be exactly 4 digits.');
+					return;
+				}
+
+				if (!user?.id) {
+					setCommandMessage('No active user loaded.');
+					setIsAddCreditAccountModalOpen(false);
+					setCreditInstitutionNameInput('');
+					setCreditLastFourInput('');
+					setCreditAccountStep('institution');
+					return;
+				}
+
+				setIsCreatingCreditAccount(true);
+				const composedName = `${trimmedInstitutionName} ${trimmedLastFour} Credit Card`;
+				addInstitutionForUser({userId: user.id, name: composedName, type: 'CREDIT'})
+					.then((account) => {
+						setInstitutionRows((prev) => [...prev, mapInstitutionToRow(account)]);
+						setCommandMessage(`Credit account "${account.name}" created.`);
+						setIsAddCreditAccountModalOpen(false);
+						setCreditInstitutionNameInput('');
+						setCreditLastFourInput('');
+						setCreditAccountStep('institution');
+					})
+					.catch((error) => {
+						setCommandMessage(`Failed to create credit account: ${error.message}`);
+					})
+					.finally(() => {
+						setIsCreatingCreditAccount(false);
+					});
+				return;
+			}
+
+			if (key.backspace || key.delete) {
+				if (creditAccountStep === 'institution') {
+					setCreditInstitutionNameInput((prev) => prev.slice(0, -1));
+				} else {
+					setCreditLastFourInput((prev) => prev.slice(0, -1));
+				}
+				return;
+			}
+
+			if (!key.ctrl && !key.meta && input && input !== '\t') {
+				if (creditAccountStep === 'institution') {
+					setCreditInstitutionNameInput((prev) => prev + input);
+				} else {
+					setCreditLastFourInput((prev) => prev + input);
 				}
 			}
 			return;
@@ -409,8 +490,20 @@ export function App() {
 					return;
 				}
 
+				if (commandToRun === 'add_credit_account') {
+					setCommandMode(false);
+					setCommandInput('');
+					setSelectedSuggestionIndex(0);
+					setCommandMessage('');
+					setIsAddCreditAccountModalOpen(true);
+					setCreditInstitutionNameInput('');
+					setCreditLastFourInput('');
+					setCreditAccountStep('institution');
+					return;
+				}
+
 				if (commandToRun === 'upload_csv') {
-					if (!uploadTargetType) {
+					if (!uploadTargetTypes) {
 						setCommandMessage('CSV upload is available only on Balances or Credit.');
 						return;
 					}
@@ -615,7 +708,7 @@ export function App() {
 		}
 
 		if (bootState === 'ready' && currentTab === 'Credit') {
-			const creditCardRows = institutionRows.filter((row) => row.type === 'CREDIT_CARD');
+			const creditCardRows = institutionRows.filter((row) => row.type === 'CREDIT' || row.type === 'CREDIT_CARD');
 			const tableRows = withEmptyInstitutionRow(
 				creditCardRows,
 				'Add First Credit Card',
@@ -672,6 +765,14 @@ export function App() {
 						typeInput={addInstitutionTypeInput}
 						step={addInstitutionStep}
 						isSaving={isCreatingInstitution}
+					/>
+				)}
+				{isAddCreditAccountModalOpen && (
+					<AddCreditAccountModal
+						institutionInput={creditInstitutionNameInput}
+						lastFourInput={creditLastFourInput}
+						step={creditAccountStep}
+						isSaving={isCreatingCreditAccount}
 					/>
 				)}
 				{isAddTransactionsModalOpen && (

@@ -46,6 +46,11 @@ function normalizeCommandRegistryShape(parsed) {
 		changed = true;
 	}
 
+	if (!normalized.commands.add_credit_account || typeof normalized.commands.add_credit_account !== 'object') {
+		normalized.commands.add_credit_account = {...DEFAULT_COMMAND_REGISTRY.commands.add_credit_account};
+		changed = true;
+	}
+
 	if (!normalized.commands.upload_csv || typeof normalized.commands.upload_csv !== 'object') {
 		normalized.commands.upload_csv = {...DEFAULT_COMMAND_REGISTRY.commands.upload_csv};
 		changed = true;
