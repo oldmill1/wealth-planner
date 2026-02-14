@@ -29,20 +29,21 @@ function mapInstitutionToRow(institution) {
 	};
 }
 
-function withEmptyInstitutionRow(rows) {
+function withEmptyInstitutionRow(rows, placeholderLabel = 'Add First Institution', placeholderId = 'add_first_institution') {
 	if (rows.length > 0) {
 		return rows;
 	}
 
 	return [
 		{
-			id: 'add_first_institution',
+			id: placeholderId,
 			type: 'ACTION',
-			name: 'Add First Institution',
+			name: placeholderLabel,
 			status: '',
 			balance: '',
 			lastUpdated: '',
 			accountMask: '',
+			placeholderLabel,
 			isPlaceholder: true
 		}
 	];
@@ -530,7 +531,12 @@ export function App() {
 		}
 
 		if (bootState === 'ready' && currentTab === 'Institutions') {
-			const tableRows = withEmptyInstitutionRow(institutionRows);
+			const institutionOnlyRows = institutionRows.filter((row) => row.type === 'BANK');
+			const tableRows = withEmptyInstitutionRow(
+				institutionOnlyRows,
+				'Add First Institution',
+				'add_first_institution'
+			);
 
 			return (
 				<>
@@ -538,7 +544,12 @@ export function App() {
 					<Text color="#777898">Loaded from local database</Text>
 					<Text color="#777898"> </Text>
 					<Box width="100%" flexDirection="column">
-						<InstitutionsDashboard terminalWidth={terminalWidth} institutionRows={tableRows} />
+						<InstitutionsDashboard
+							terminalWidth={terminalWidth}
+							institutionRows={tableRows}
+							searchLabel="institution:all"
+							summaryLabel="Institutions"
+						/>
 					</Box>
 					<Text color="#777898">Press q to quit</Text>
 				</>
@@ -546,10 +557,26 @@ export function App() {
 		}
 
 		if (bootState === 'ready' && currentTab === 'Credit') {
+			const creditCardRows = institutionRows.filter((row) => row.type === 'CREDIT_CARD');
+			const tableRows = withEmptyInstitutionRow(
+				creditCardRows,
+				'Add First Credit Card',
+				'add_first_credit_card'
+			);
+
 			return (
 				<>
 					<Text color="#c5c8ff">Credit Workspace</Text>
-					<Text color="#777898">No credit accounts connected yet.</Text>
+					<Text color="#777898">Loaded from local database</Text>
+					<Text color="#777898"> </Text>
+					<Box width="100%" flexDirection="column">
+						<InstitutionsDashboard
+							terminalWidth={terminalWidth}
+							institutionRows={tableRows}
+							searchLabel="credit_card:all"
+							summaryLabel="Credit Cards"
+						/>
+					</Box>
 					<Text color="#777898">Press q to quit</Text>
 				</>
 			);
@@ -577,8 +604,8 @@ export function App() {
 				width="100%"
 				flexGrow={1}
 				flexDirection="column"
-				justifyContent={currentTab === 'Institutions' ? 'flex-start' : 'center'}
-				alignItems={currentTab === 'Institutions' ? 'stretch' : 'center'}
+				justifyContent={currentTab === 'Institutions' || currentTab === 'Credit' ? 'flex-start' : 'center'}
+				alignItems={currentTab === 'Institutions' || currentTab === 'Credit' ? 'stretch' : 'center'}
 			>
 				{content}
 				{isAddInstitutionModalOpen && (
