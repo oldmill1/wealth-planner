@@ -5,7 +5,7 @@ import {AddInstitutionModal} from './components/AddInstitutionModal.jsx';
 import {AddTransactionsModal} from './components/AddTransactionsModal.jsx';
 import {DEFAULT_TIMEZONE, TABS} from './constants.js';
 import {BottomBar} from './components/BottomBar.jsx';
-import {InstitutionsDashboard} from './components/InstitutionsDashboard.jsx';
+import {Dashboard} from './components/Dashboard.jsx';
 import {Tabs} from './components/Tabs.jsx';
 import {
 	addInstitutionForUser,
@@ -602,7 +602,7 @@ export function App() {
 					<Text color="#777898">Loaded from local database</Text>
 					<Text color="#777898"> </Text>
 					<Box width="100%" flexDirection="column">
-						<InstitutionsDashboard
+						<Dashboard
 							terminalWidth={terminalWidth}
 							institutionRows={tableRows}
 							searchLabel="institution:all"
@@ -628,7 +628,7 @@ export function App() {
 					<Text color="#777898">Loaded from local database</Text>
 					<Text color="#777898"> </Text>
 					<Box width="100%" flexDirection="column">
-						<InstitutionsDashboard
+						<Dashboard
 							terminalWidth={terminalWidth}
 							institutionRows={tableRows}
 							searchLabel="credit_card:all"

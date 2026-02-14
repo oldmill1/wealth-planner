@@ -33,7 +33,7 @@ function InstitutionRow({item, isSelected, leftPaneWidth}) {
 	);
 }
 
-export function InstitutionsDashboard({
+export function Dashboard({
 	terminalWidth,
 	institutionRows,
 	searchLabel = 'institution:all',
