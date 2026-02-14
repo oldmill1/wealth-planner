@@ -50,7 +50,8 @@ function withEmptyInstitutionRow(rows) {
 
 const TAB_COMMANDS = {
 	Home: ['clean_db'],
-	Institutions: ['add_institutions', 'add_transactions']
+	Institutions: ['add_institutions', 'add_transactions'],
+	Credit: []
 };
 
 function fuzzyMatch(query, value) {
@@ -539,6 +540,16 @@ export function App() {
 					<Box width="100%" flexDirection="column">
 						<InstitutionsDashboard terminalWidth={terminalWidth} institutionRows={tableRows} />
 					</Box>
+					<Text color="#777898">Press q to quit</Text>
+				</>
+			);
+		}
+
+		if (bootState === 'ready' && currentTab === 'Credit') {
+			return (
+				<>
+					<Text color="#c5c8ff">Credit Workspace</Text>
+					<Text color="#777898">No credit accounts connected yet.</Text>
 					<Text color="#777898">Press q to quit</Text>
 				</>
 			);

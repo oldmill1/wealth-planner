@@ -1,5 +1,6 @@
 import React from 'react';
 import {Box, Text} from 'ink';
+import {TABS} from '../constants.js';
 
 function TabLabel({label, isActive}) {
 	if (isActive) {
@@ -15,10 +16,12 @@ export function Tabs({terminalWidth, currentTab}) {
 		<Box width="100%" flexDirection="column">
 			<Box width="100%" paddingX={2} flexDirection="row" alignItems="center">
 				<Text color="#3b3f70">|  </Text>
-				<TabLabel label="Home" isActive={currentTab === 'Home'} />
-				<Text color="#3b3f70">  |  </Text>
-				<TabLabel label="Institutions" isActive={currentTab === 'Institutions'} />
-				<Text color="#3b3f70">  |</Text>
+				{TABS.map((tab, index) => (
+					<React.Fragment key={tab}>
+						<TabLabel label={tab} isActive={currentTab === tab} />
+						<Text color="#3b3f70">{index === TABS.length - 1 ? '  |' : '  |  '}</Text>
+					</React.Fragment>
+				))}
 			</Box>
 			<Box width="100%" paddingX={2}>
 				<Text color="#2b2d47">{divider}</Text>
