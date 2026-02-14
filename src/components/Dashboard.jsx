@@ -197,24 +197,25 @@ export function Dashboard({
 	return (
 		<Box width="100%" paddingX={1} paddingY={1} flexDirection="row">
 			<Box width={leftPaneWidth} flexDirection="column" paddingX={1}>
-				<Text color="#2f325a">{'-'.repeat(Math.max(30, leftPaneWidth - 4))}</Text>
+				<Text backgroundColor="#1d2a4d" color="#d4dcff">  {summaryLabel.toUpperCase()} DASHBOARD  </Text>
+				<Text color="#2f3a67">{'='.repeat(Math.max(30, leftPaneWidth - 4))}</Text>
 				<Box width="100%" paddingX={1}>
 					<Text color="#aeb2df">{tableHeader}</Text>
 				</Box>
-				<Text color="#2f325a">{'-'.repeat(Math.max(30, leftPaneWidth - 4))}</Text>
+				<Text color="#2f3a67">{'-'.repeat(Math.max(30, leftPaneWidth - 4))}</Text>
 				{visibleAccountRows.map((item, index) => (
 					<InstitutionRow key={item.id} item={item} isSelected={index === 0} leftPaneWidth={leftPaneWidth} />
 				))}
-				<Text color="#2f325a">{'-'.repeat(Math.max(30, leftPaneWidth - 4))}</Text>
-				<Text color="#7d83c8"> Recent Transactions</Text>
-				<Text color="#2f325a">{'-'.repeat(Math.max(30, leftPaneWidth - 4))}</Text>
+				<Text color="#2f3a67">{'-'.repeat(Math.max(30, leftPaneWidth - 4))}</Text>
+				<Text backgroundColor="#1f2f56" color="#9db5e9">  RECENT TRANSACTIONS  </Text>
+				<Text color="#2f3a67">{'-'.repeat(Math.max(30, leftPaneWidth - 4))}</Text>
 				{visibleTransactionRows.length === 0 && (
 					<Text color="#6f7396"> No transactions yet</Text>
 				)}
 				{visibleTransactionRows.map((item) => (
-					<Text key={item.id} color="#8f93bf"> {formatTransactionLine(item, Math.max(30, leftPaneWidth - 6))}</Text>
+					<Text key={item.id} color="#95a0d1"> {formatTransactionLine(item, Math.max(30, leftPaneWidth - 6))}</Text>
 				))}
-				<Text color="#777898"> Source: ~/.config/wealth-planner/main.json</Text>
+				<Text color="#6b74a8"> Source: ~/.config/wealth-planner/main.json</Text>
 			</Box>
 			<Box width={1}>
 				<Text color="#2f325a">│</Text>
@@ -224,21 +225,30 @@ export function Dashboard({
 					width={checklistWidth}
 					flexDirection="column"
 					borderStyle="round"
-					borderColor="#2f325a"
+					borderColor="#33406f"
+					backgroundColor="#151a30"
 					paddingX={2}
 					paddingY={1}
 				>
+					<Text color="#8f98c8">Setup Checklist</Text>
+					<Text color="#27305a">{'-'.repeat(Math.max(14, checklistWidth - 6))}</Text>
 					<Text color="#aeb2df">
 						<Text color={hasBalances ? '#58d7a3' : '#6f7396'}>● </Text>
-						<Text color={hasBalances ? '#c5c8ff' : '#8f93bf'}>Add Deposit Account</Text>
+						<Text color={hasBalances ? '#d4dcff' : '#8f93bf'}>Add Deposit Account</Text>
 					</Text>
 					<Text color={hasBalances ? '#8f93bf' : '#6f7396'}>  Eg your chequing account</Text>
-					<Text color="#2f325a">{'-'.repeat(Math.max(14, checklistWidth - 6))}</Text>
+					<Text color="#27305a">{'-'.repeat(Math.max(14, checklistWidth - 6))}</Text>
 					<Text color="#aeb2df">
 						<Text color={hasCredits ? '#58d7a3' : '#6f7396'}>● </Text>
-						<Text color={hasCredits ? '#c5c8ff' : '#8f93bf'}>Add Credit Account</Text>
+						<Text color={hasCredits ? '#d4dcff' : '#8f93bf'}>Add Credit Account</Text>
 					</Text>
 					<Text color={hasCredits ? '#8f93bf' : '#6f7396'}>  Eg your American Express card</Text>
+					<Text color="#27305a">{'-'.repeat(Math.max(14, checklistWidth - 6))}</Text>
+					<Box flexDirection="row">
+						<Text backgroundColor="#213a35" color="#80d5b4">  Ready  </Text>
+						<Box width={1} />
+						<Text backgroundColor="#1f2f56" color="#9db5e9">  Synced  </Text>
+					</Box>
 				</Box>
 			</Box>
 		</Box>

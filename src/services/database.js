@@ -4,6 +4,13 @@ import path from 'node:path';
 
 import {DB_PATH, CONFIG_DIR, INSTITUTION_TYPES} from '../constants.js';
 
+const DEFAULT_CATEGORY_ID = 'uncategorized';
+const DEFAULT_CATEGORY = {
+	id: DEFAULT_CATEGORY_ID,
+	name: 'Uncategorized',
+	parent_id: null
+};
+
 function createRecord({name, timezone}) {
 	const now = new Date().toISOString();
 	return {
@@ -73,6 +80,48 @@ function normalizeUserActivity(record) {
 	};
 }
 
+function normalizeCategory(record) {
+	if (record === null || typeof record !== 'object') {
+		return null;
+	}
+
+	const id = String(record.id ?? '').trim().toLowerCase();
+	const name = String(record.name ?? '').trim();
+	const parentIdRaw = record.parent_id;
+	const parentId = parentIdRaw === null || parentIdRaw === undefined
+		? null
+		: String(parentIdRaw).trim().toLowerCase();
+
+	if (!id || !name) {
+		return null;
+	}
+
+	return {
+		id,
+		name,
+		parent_id: parentId || null
+	};
+}
+
+function normalizeTransaction(record) {
+	if (record === null || typeof record !== 'object') {
+		return null;
+	}
+
+	const normalized = {
+		...record
+	};
+	const categoryId = String(normalized.category_id ?? normalized.category ?? '')
+		.trim()
+		.toLowerCase();
+	normalized.category_id = categoryId || DEFAULT_CATEGORY_ID;
+	if (Object.hasOwn(normalized, 'category')) {
+		delete normalized.category;
+	}
+
+	return normalized;
+}
+
 function normalizeDatabaseShape(parsed) {
 	let changed = false;
 	const normalized = parsed && typeof parsed === 'object' ? {...parsed} : {};
@@ -117,9 +166,45 @@ function normalizeDatabaseShape(parsed) {
 		normalized.accounts = sanitizedAccounts;
 	}
 
+	if (!Array.isArray(normalized.categories)) {
+		normalized.categories = [DEFAULT_CATEGORY];
+		changed = true;
+	} else {
+		const sanitizedCategories = normalized.categories
+			.map(normalizeCategory)
+			.filter((category) => category !== null);
+		const hasDefaultCategory = sanitizedCategories.some((category) => category.id === DEFAULT_CATEGORY_ID);
+		if (!hasDefaultCategory) {
+			sanitizedCategories.unshift(DEFAULT_CATEGORY);
+		}
+		if (
+			sanitizedCategories.length !== normalized.categories.length ||
+			!hasDefaultCategory
+		) {
+			changed = true;
+		}
+		normalized.categories = sanitizedCategories;
+	}
+
 	if (!Array.isArray(normalized.transactions)) {
 		normalized.transactions = [];
 		changed = true;
+	} else {
+		const sanitizedTransactions = normalized.transactions
+			.map(normalizeTransaction)
+			.filter((transaction) => transaction !== null);
+		if (
+			sanitizedTransactions.length !== normalized.transactions.length ||
+			sanitizedTransactions.some(
+				(transaction, index) => (
+					transaction.category_id !== normalized.transactions[index]?.category_id ||
+					Object.hasOwn(normalized.transactions[index] ?? {}, 'category')
+				)
+			)
+		) {
+			changed = true;
+		}
+		normalized.transactions = sanitizedTransactions;
 	}
 
 	if (!Array.isArray(normalized.user_activity)) {
@@ -155,6 +240,7 @@ function createDatabase(user) {
 		},
 		users: [user],
 		accounts: [],
+		categories: [DEFAULT_CATEGORY],
 		transactions: [],
 		user_activity: []
 	};
@@ -174,6 +260,7 @@ export async function loadOrInitDatabase() {
 			firstRun: false,
 			user: firstUser,
 			accounts: normalized.accounts ?? [],
+			categories: normalized.categories ?? [],
 			transactions: normalized.transactions ?? [],
 			userActivity: normalized.user_activity ?? []
 		};
@@ -181,7 +268,7 @@ export async function loadOrInitDatabase() {
 		if (error && error.code !== 'ENOENT') {
 			throw error;
 		}
-		return {firstRun: true, user: null, accounts: [], transactions: [], userActivity: []};
+		return {firstRun: true, user: null, accounts: [], categories: [DEFAULT_CATEGORY], transactions: [], userActivity: []};
 	}
 }
 
@@ -420,6 +507,7 @@ function buildTransactionsFromDepositCsvRows({rows, userId, institutionId, sourc
 			posted_at: parseUsDateToIso(dateRaw.trim()),
 			description_raw: details,
 			amount_cents: amountCents,
+			category_id: DEFAULT_CATEGORY_ID,
 			currency: 'CAD',
 			direction,
 			category_hint: categoryHint,
@@ -464,6 +552,7 @@ function buildTransactionsFromAmexCsvRows({rows, userId, institutionId, sourceFi
 			posted_at: parseMonthNameDateToIso((dateRaw ?? '').trim()),
 			description_raw: description,
 			amount_cents: amountCents,
+			category_id: DEFAULT_CATEGORY_ID,
 			currency: 'CAD',
 			direction,
 			category_hint: categoryHint,
@@ -540,10 +629,13 @@ export async function importTransactionsToDatabase({institutionId, transactions}
 		throw new Error('Institution not found.');
 	}
 
-	normalized.transactions = [...(normalized.transactions ?? []), ...transactions];
+	const normalizedIncomingTransactions = (transactions ?? [])
+		.map(normalizeTransaction)
+		.filter((transaction) => transaction !== null);
+	normalized.transactions = [...(normalized.transactions ?? []), ...normalizedIncomingTransactions];
 	institution.transaction_ids = [
 		...(institution.transaction_ids ?? []),
-		...transactions.map((item) => item.id)
+		...normalizedIncomingTransactions.map((item) => item.id)
 	];
 	institution.updated_at = now;
 	normalized.meta = {
@@ -552,7 +644,7 @@ export async function importTransactionsToDatabase({institutionId, transactions}
 	};
 
 	await fs.writeFile(DB_PATH, JSON.stringify(normalized, null, 2), 'utf8');
-	return transactions.length;
+	return normalizedIncomingTransactions.length;
 }
 
 export function isValidTimezone(timezone) {
