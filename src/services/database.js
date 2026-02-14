@@ -70,17 +70,29 @@ function normalizeDatabaseShape(parsed) {
 		changed = true;
 	}
 
-	if (!Array.isArray(normalized.institutions)) {
-		normalized.institutions = [];
+	// Backward-compatible migration:
+	// legacy key `institutions` -> canonical key `accounts`
+	if (Array.isArray(normalized.institutions) && !Array.isArray(normalized.accounts)) {
+		normalized.accounts = normalized.institutions;
+		delete normalized.institutions;
+		changed = true;
+	}
+	if (Object.hasOwn(normalized, 'institutions')) {
+		delete normalized.institutions;
+		changed = true;
+	}
+
+	if (!Array.isArray(normalized.accounts)) {
+		normalized.accounts = [];
 		changed = true;
 	} else {
-		const sanitizedInstitutions = normalized.institutions
+		const sanitizedAccounts = normalized.accounts
 			.map(normalizeInstitution)
 			.filter((institution) => institution !== null);
-		if (sanitizedInstitutions.length !== normalized.institutions.length) {
+		if (sanitizedAccounts.length !== normalized.accounts.length) {
 			changed = true;
 		}
-		normalized.institutions = sanitizedInstitutions;
+		normalized.accounts = sanitizedAccounts;
 	}
 
 	if (!Array.isArray(normalized.transactions)) {
@@ -107,7 +119,7 @@ function createDatabase(user) {
 			updated_at: now
 		},
 		users: [user],
-		institutions: [],
+		accounts: [],
 		transactions: []
 	};
 }
@@ -125,14 +137,14 @@ export async function loadOrInitDatabase() {
 		return {
 			firstRun: false,
 			user: firstUser,
-			institutions: normalized.institutions ?? [],
+			accounts: normalized.accounts ?? [],
 			transactions: normalized.transactions ?? []
 		};
 	} catch (error) {
 		if (error && error.code !== 'ENOENT') {
 			throw error;
 		}
-		return {firstRun: true, user: null, institutions: [], transactions: []};
+		return {firstRun: true, user: null, accounts: [], transactions: []};
 	}
 }
 
@@ -165,7 +177,7 @@ export async function addInstitutionForUser({userId, name}) {
 		updated_at: now
 	};
 
-	normalized.institutions = [...(normalized.institutions ?? []), institution];
+	normalized.accounts = [...(normalized.accounts ?? []), institution];
 	normalized.meta = {
 		...normalized.meta,
 		updated_at: now
@@ -328,7 +340,7 @@ export async function importTransactionsToDatabase({institutionId, transactions}
 	const parsed = JSON.parse(raw);
 	const {normalized} = normalizeDatabaseShape(parsed);
 	const now = new Date().toISOString();
-	const institution = normalized.institutions.find((item) => item.id === institutionId);
+	const institution = normalized.accounts.find((item) => item.id === institutionId);
 
 	if (!institution) {
 		throw new Error('Institution not found.');

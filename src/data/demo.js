@@ -34,11 +34,11 @@ export const DEFAULT_COMMAND_REGISTRY = {
 		clean_db: {
 			description: 'Backup then remove the local main database file.'
 		},
-		add_institutions: {
-			description: 'Create a new institution for the active user.'
+		add_deposit_account: {
+			description: 'Create a new deposit account for the active user.'
 		},
-		add_transactions: {
-			description: 'Import transactions from a CSV file into an institution.'
+		upload_csv: {
+			description: 'Import transactions from a CSV file into an account.'
 		}
 	}
 };

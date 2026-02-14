@@ -18,18 +18,46 @@ function normalizeCommandRegistryShape(parsed) {
 		changed = true;
 	}
 
+	if (
+		normalized.commands.add_institutions &&
+		typeof normalized.commands.add_institutions === 'object' &&
+		(!normalized.commands.add_deposit_account || typeof normalized.commands.add_deposit_account !== 'object')
+	) {
+		normalized.commands.add_deposit_account = {...normalized.commands.add_institutions};
+		changed = true;
+	}
+
+	if (
+		normalized.commands.add_transactions &&
+		typeof normalized.commands.add_transactions === 'object' &&
+		(!normalized.commands.upload_csv || typeof normalized.commands.upload_csv !== 'object')
+	) {
+		normalized.commands.upload_csv = {...normalized.commands.add_transactions};
+		changed = true;
+	}
+
 	if (!normalized.commands.clean_db || typeof normalized.commands.clean_db !== 'object') {
 		normalized.commands.clean_db = {...DEFAULT_COMMAND_REGISTRY.commands.clean_db};
 		changed = true;
 	}
 
-	if (!normalized.commands.add_institutions || typeof normalized.commands.add_institutions !== 'object') {
-		normalized.commands.add_institutions = {...DEFAULT_COMMAND_REGISTRY.commands.add_institutions};
+	if (!normalized.commands.add_deposit_account || typeof normalized.commands.add_deposit_account !== 'object') {
+		normalized.commands.add_deposit_account = {...DEFAULT_COMMAND_REGISTRY.commands.add_deposit_account};
 		changed = true;
 	}
 
-	if (!normalized.commands.add_transactions || typeof normalized.commands.add_transactions !== 'object') {
-		normalized.commands.add_transactions = {...DEFAULT_COMMAND_REGISTRY.commands.add_transactions};
+	if (!normalized.commands.upload_csv || typeof normalized.commands.upload_csv !== 'object') {
+		normalized.commands.upload_csv = {...DEFAULT_COMMAND_REGISTRY.commands.upload_csv};
+		changed = true;
+	}
+
+	if (Object.hasOwn(normalized.commands, 'add_institutions')) {
+		delete normalized.commands.add_institutions;
+		changed = true;
+	}
+
+	if (Object.hasOwn(normalized.commands, 'add_transactions')) {
+		delete normalized.commands.add_transactions;
 		changed = true;
 	}
 

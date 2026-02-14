@@ -29,7 +29,7 @@ function mapInstitutionToRow(institution) {
 	};
 }
 
-function withEmptyInstitutionRow(rows, placeholderLabel = 'Add First Institution', placeholderId = 'add_first_institution') {
+function withEmptyInstitutionRow(rows, placeholderLabel = 'Add First Deposit Account', placeholderId = 'add_first_institution') {
 	if (rows.length > 0) {
 		return rows;
 	}
@@ -51,8 +51,8 @@ function withEmptyInstitutionRow(rows, placeholderLabel = 'Add First Institution
 
 const TAB_COMMANDS = {
 	Home: ['clean_db'],
-	Institutions: ['add_institutions', 'add_transactions'],
-	Credit: []
+	Balances: ['add_deposit_account', 'upload_csv'],
+	Credit: ['upload_csv']
 };
 
 function fuzzyMatch(query, value) {
@@ -94,6 +94,8 @@ export function App() {
 	const [institutionRows, setInstitutionRows] = useState([]);
 	const [isAddInstitutionModalOpen, setIsAddInstitutionModalOpen] = useState(false);
 	const [addInstitutionNameInput, setAddInstitutionNameInput] = useState('');
+	const [addInstitutionTypeInput, setAddInstitutionTypeInput] = useState('');
+	const [addInstitutionStep, setAddInstitutionStep] = useState('name');
 	const [isCreatingInstitution, setIsCreatingInstitution] = useState(false);
 	const [isAddTransactionsModalOpen, setIsAddTransactionsModalOpen] = useState(false);
 	const [transactionInstitutionIndex, setTransactionInstitutionIndex] = useState(0);
@@ -101,6 +103,21 @@ export function App() {
 	const [transactionImportStep, setTransactionImportStep] = useState('form');
 	const [transactionPreview, setTransactionPreview] = useState(null);
 	const [isImportingTransactions, setIsImportingTransactions] = useState(false);
+	const uploadTargetType = useMemo(() => {
+		if (currentTab === 'Balances') {
+			return 'BANK';
+		}
+		if (currentTab === 'Credit') {
+			return 'CREDIT_CARD';
+		}
+		return null;
+	}, [currentTab]);
+	const transactionInstitutionRows = useMemo(() => {
+		if (!uploadTargetType) {
+			return [];
+		}
+		return institutionRows.filter((row) => row.type === uploadTargetType);
+	}, [institutionRows, uploadTargetType]);
 	const availableCommands = useMemo(() => {
 		const tabCommands = TAB_COMMANDS[currentTab] ?? [];
 		return tabCommands.filter((command) => Object.hasOwn(commands, command));
@@ -114,6 +131,15 @@ export function App() {
 	useEffect(() => {
 		setSelectedSuggestionIndex(0);
 	}, [commandInput, commandSuggestions.length, currentTab]);
+
+	useEffect(() => {
+		setTransactionInstitutionIndex((prev) => {
+			if (transactionInstitutionRows.length === 0) {
+				return 0;
+			}
+			return Math.min(prev, transactionInstitutionRows.length - 1);
+		});
+	}, [transactionInstitutionRows.length]);
 
 	useEffect(() => {
 		let mounted = true;
@@ -134,7 +160,7 @@ export function App() {
 					return;
 				}
 				setUser(bios.user);
-				setInstitutionRows((bios.institutions ?? []).map(mapInstitutionToRow));
+				setInstitutionRows((bios.accounts ?? bios.institutions ?? []).map(mapInstitutionToRow));
 				setBootState('ready');
 			} catch (error) {
 				if (!mounted) {
@@ -160,30 +186,48 @@ export function App() {
 			if (key.escape) {
 				setIsAddInstitutionModalOpen(false);
 				setAddInstitutionNameInput('');
-				setCommandMessage('Add institution cancelled.');
+				setAddInstitutionTypeInput('');
+				setAddInstitutionStep('name');
+				setCommandMessage('Add deposit account cancelled.');
 				return;
 			}
 
 			if (key.return) {
 				const trimmedName = addInstitutionNameInput.trim();
-				if (!trimmedName) {
-					setCommandMessage('Institution name is required.');
+				const trimmedType = addInstitutionTypeInput.trim();
+				if (addInstitutionStep === 'name') {
+					if (!trimmedName) {
+						setCommandMessage('Institution name is required.');
+						return;
+					}
+					setAddInstitutionStep('type');
 					return;
 				}
+
+				if (!trimmedType) {
+					setCommandMessage('Account type is required.');
+					return;
+				}
+
 				if (!user?.id) {
 					setCommandMessage('No active user loaded.');
 					setIsAddInstitutionModalOpen(false);
 					setAddInstitutionNameInput('');
+					setAddInstitutionTypeInput('');
+					setAddInstitutionStep('name');
 					return;
 				}
 
 				setIsCreatingInstitution(true);
-				addInstitutionForUser({userId: user.id, name: trimmedName})
+				const composedName = `${trimmedName} ${trimmedType} Account`;
+				addInstitutionForUser({userId: user.id, name: composedName})
 					.then((institution) => {
 						setInstitutionRows((prev) => [...prev, mapInstitutionToRow(institution)]);
 						setCommandMessage(`Institution "${institution.name}" created.`);
 						setIsAddInstitutionModalOpen(false);
 						setAddInstitutionNameInput('');
+						setAddInstitutionTypeInput('');
+						setAddInstitutionStep('name');
 					})
 					.catch((error) => {
 						setCommandMessage(`Failed to create institution: ${error.message}`);
@@ -195,18 +239,26 @@ export function App() {
 			}
 
 			if (key.backspace || key.delete) {
-				setAddInstitutionNameInput((prev) => prev.slice(0, -1));
+				if (addInstitutionStep === 'name') {
+					setAddInstitutionNameInput((prev) => prev.slice(0, -1));
+				} else {
+					setAddInstitutionTypeInput((prev) => prev.slice(0, -1));
+				}
 				return;
 			}
 
 			if (!key.ctrl && !key.meta && input && input !== '\t') {
-				setAddInstitutionNameInput((prev) => prev + input);
+				if (addInstitutionStep === 'name') {
+					setAddInstitutionNameInput((prev) => prev + input);
+				} else {
+					setAddInstitutionTypeInput((prev) => prev + input);
+				}
 			}
 			return;
 		}
 
 		if (isAddTransactionsModalOpen) {
-			const hasInstitutions = institutionRows.length > 0;
+			const hasInstitutions = transactionInstitutionRows.length > 0;
 
 			if (key.escape) {
 				setIsAddTransactionsModalOpen(false);
@@ -219,14 +271,14 @@ export function App() {
 			if (transactionImportStep === 'form') {
 				if (key.leftArrow && hasInstitutions) {
 					setTransactionInstitutionIndex((prev) => (
-						(prev - 1 + institutionRows.length) % institutionRows.length
+						(prev - 1 + transactionInstitutionRows.length) % transactionInstitutionRows.length
 					));
 					return;
 				}
 
 				if (key.rightArrow && hasInstitutions) {
 					setTransactionInstitutionIndex((prev) => (
-						(prev + 1) % institutionRows.length
+						(prev + 1) % transactionInstitutionRows.length
 					));
 					return;
 				}
@@ -238,13 +290,13 @@ export function App() {
 					return;
 				}
 				if (!hasInstitutions) {
-					setCommandMessage('Create an institution first.');
+					setCommandMessage('Create a matching account first.');
 					return;
 				}
 
 				if (transactionImportStep === 'form') {
 					setIsImportingTransactions(true);
-					const selectedInstitution = institutionRows[transactionInstitutionIndex];
+					const selectedInstitution = transactionInstitutionRows[transactionInstitutionIndex];
 					previewTransactionsCsvImport({
 						userId: user.id,
 						institutionId: selectedInstitution.id,
@@ -270,7 +322,7 @@ export function App() {
 					}
 
 					setIsImportingTransactions(true);
-					const selectedInstitution = institutionRows[transactionInstitutionIndex];
+					const selectedInstitution = transactionInstitutionRows[transactionInstitutionIndex];
 					importTransactionsToDatabase({
 						institutionId: selectedInstitution.id,
 						transactions: transactionPreview.transactions
@@ -345,17 +397,23 @@ export function App() {
 					return;
 				}
 
-				if (commandToRun === 'add_institutions') {
+				if (commandToRun === 'add_deposit_account') {
 					setCommandMode(false);
 					setCommandInput('');
 					setSelectedSuggestionIndex(0);
 					setCommandMessage('');
 					setIsAddInstitutionModalOpen(true);
 					setAddInstitutionNameInput('');
+					setAddInstitutionTypeInput('');
+					setAddInstitutionStep('name');
 					return;
 				}
 
-				if (commandToRun === 'add_transactions') {
+				if (commandToRun === 'upload_csv') {
+					if (!uploadTargetType) {
+						setCommandMessage('CSV upload is available only on Balances or Credit.');
+						return;
+					}
 					setCommandMode(false);
 					setCommandInput('');
 					setSelectedSuggestionIndex(0);
@@ -530,17 +588,17 @@ export function App() {
 			);
 		}
 
-		if (bootState === 'ready' && currentTab === 'Institutions') {
+		if (bootState === 'ready' && currentTab === 'Balances') {
 			const institutionOnlyRows = institutionRows.filter((row) => row.type === 'BANK');
 			const tableRows = withEmptyInstitutionRow(
 				institutionOnlyRows,
-				'Add First Institution',
+				'Add First Deposit Account',
 				'add_first_institution'
 			);
 
 			return (
 				<>
-					<Text color="#c5c8ff">Institutions Workspace</Text>
+					<Text color="#c5c8ff">Balances Workspace</Text>
 					<Text color="#777898">Loaded from local database</Text>
 					<Text color="#777898"> </Text>
 					<Box width="100%" flexDirection="column">
@@ -548,7 +606,7 @@ export function App() {
 							terminalWidth={terminalWidth}
 							institutionRows={tableRows}
 							searchLabel="institution:all"
-							summaryLabel="Institutions"
+							summaryLabel="Balances"
 						/>
 					</Box>
 					<Text color="#777898">Press q to quit</Text>
@@ -604,19 +662,21 @@ export function App() {
 				width="100%"
 				flexGrow={1}
 				flexDirection="column"
-				justifyContent={currentTab === 'Institutions' || currentTab === 'Credit' ? 'flex-start' : 'center'}
-				alignItems={currentTab === 'Institutions' || currentTab === 'Credit' ? 'stretch' : 'center'}
+				justifyContent={currentTab === 'Balances' || currentTab === 'Credit' ? 'flex-start' : 'center'}
+				alignItems={currentTab === 'Balances' || currentTab === 'Credit' ? 'stretch' : 'center'}
 			>
 				{content}
 				{isAddInstitutionModalOpen && (
 					<AddInstitutionModal
 						nameInput={addInstitutionNameInput}
+						typeInput={addInstitutionTypeInput}
+						step={addInstitutionStep}
 						isSaving={isCreatingInstitution}
 					/>
 				)}
 				{isAddTransactionsModalOpen && (
 					<AddTransactionsModal
-						institutions={institutionRows}
+						institutions={transactionInstitutionRows}
 						selectedInstitutionIndex={transactionInstitutionIndex}
 						csvPathInput={transactionCsvPathInput}
 						step={transactionImportStep}

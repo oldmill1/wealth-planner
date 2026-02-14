@@ -7,4 +7,4 @@ export const COMMANDS_PATH = path.join(CONFIG_DIR, 'commands.json');
 
 export const DEFAULT_TIMEZONE = 'America/New_York';
 export const INSTITUTION_TYPES = new Set(['BANK', 'CREDIT_CARD']);
-export const TABS = ['Home', 'Institutions', 'Credit'];
+export const TABS = ['Home', 'Balances', 'Credit'];

@@ -13,7 +13,7 @@ function InstitutionRow({item, isSelected, leftPaneWidth}) {
 	if (item.isPlaceholder) {
 		return (
 			<Box width="100%" paddingX={1} backgroundColor={isSelected ? '#24264a' : undefined}>
-				<Text color={isSelected ? '#d4d6ff' : '#8f93bf'}>+ {item.placeholderLabel ?? 'Add First Institution'}</Text>
+				<Text color={isSelected ? '#d4d6ff' : '#8f93bf'}>+ {item.placeholderLabel ?? 'Add First Deposit Account'}</Text>
 			</Box>
 		);
 	}
