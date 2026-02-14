@@ -7,6 +7,7 @@ import {AddTransactionsModal} from './components/AddTransactionsModal.jsx';
 import {DEFAULT_TIMEZONE, TABS} from './constants.js';
 import {BottomBar} from './components/BottomBar.jsx';
 import {Dashboard} from './components/Dashboard.jsx';
+import {HomeOverviewPanel} from './components/HomeOverviewPanel.jsx';
 import {Tabs} from './components/Tabs.jsx';
 import {
 	addInstitutionForUser,
@@ -668,6 +669,16 @@ export function App() {
 		const currentUserRows = accountRows.filter((row) => row.userId === user?.id);
 		const hasBalances = currentUserRows.some((row) => row.type === 'BANK');
 		const hasCredits = currentUserRows.some((row) => row.type === 'CREDIT' || row.type === 'CREDIT_CARD');
+		const depositAccounts = currentUserRows.filter((row) => row.type === 'BANK').length;
+		const creditAccounts = currentUserRows.filter((row) => row.type === 'CREDIT' || row.type === 'CREDIT_CARD').length;
+		const totalAccounts = currentUserRows.length;
+		const userTransactions = transactions.filter((item) => item.user_id === user?.id);
+		const totalTransactions = userTransactions.length;
+		const latestAccountUpdatedAt = currentUserRows
+			.map((row) => row.updatedAt)
+			.filter(Boolean)
+			.sort((a, b) => String(b).localeCompare(String(a)))[0] ?? null;
+		const lastActivity = latestAccountUpdatedAt ? formatLastUpdated(latestAccountUpdatedAt) : 'none';
 
 		if (bootState === 'booting') {
 			return (
@@ -780,12 +791,16 @@ export function App() {
 		}
 
 		return (
-			<>
-				<Text color="blueBright">Wealth Planner</Text>
-				<Text color="#777898">Hello, {user?.name ?? 'there'}</Text>
-				<Text color="#777898">Timezone: {user?.timezone ?? DEFAULT_TIMEZONE}</Text>
-				<Text color="#777898">Press q to quit</Text>
-			</>
+			<Box width="100%" justifyContent="center" alignItems="center">
+				<HomeOverviewPanel
+					userName={user?.name ?? 'there'}
+					totalAccounts={totalAccounts}
+					depositAccounts={depositAccounts}
+					creditAccounts={creditAccounts}
+					totalTransactions={totalTransactions}
+					lastActivity={lastActivity}
+				/>
+			</Box>
 		);
 	}, [bootState, currentTab, errorMessage, accountRows, nameInput, terminalHeight, terminalWidth, timezoneInput, transactions, user]);
 
