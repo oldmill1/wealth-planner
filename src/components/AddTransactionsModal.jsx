@@ -35,6 +35,24 @@ export function AddTransactionsModal({
 						<Text color="#32496b">File: {preview.resolvedPath}</Text>
 						<Text color="#32496b">Rows: {preview.count}</Text>
 						<Text color="#32496b">Range: {preview.dateFrom} to {preview.dateTo}</Text>
+						{preview.categorization && (
+							<>
+								<Text color="#32496b">
+									Categorized: {preview.categorization.categorized}/{preview.categorization.total}
+								</Text>
+								<Text color="#32496b">
+									Defaulted: {preview.categorization.uncategorized}
+								</Text>
+							</>
+						)}
+					</>
+				)}
+				{step === 'categorizing' && preview && (
+					<>
+						<Text color="#4f6480"> </Text>
+						<Text color="#1e2f47">Categorizing with AI...</Text>
+						<Text color="#32496b">File: {preview.resolvedPath}</Text>
+						<Text color="#32496b">Rows: {preview.count}</Text>
 					</>
 				)}
 
@@ -48,6 +66,8 @@ export function AddTransactionsModal({
 						? 'Working...'
 						: step === 'preview'
 							? 'Enter = Confirm import, Esc = Cancel'
+							: step === 'categorizing'
+								? 'AI is assigning categories. Esc = Cancel'
 							: 'Enter = Preview import, Esc = Cancel'}
 				</Text>
 			</Box>

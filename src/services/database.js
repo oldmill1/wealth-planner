@@ -118,6 +118,9 @@ function normalizeTransaction(record) {
 	if (Object.hasOwn(normalized, 'category')) {
 		delete normalized.category;
 	}
+	if (Object.hasOwn(normalized, 'category_hint')) {
+		delete normalized.category_hint;
+	}
 
 	return normalized;
 }
@@ -198,7 +201,8 @@ function normalizeDatabaseShape(parsed) {
 			sanitizedTransactions.some(
 				(transaction, index) => (
 					transaction.category_id !== normalized.transactions[index]?.category_id ||
-					Object.hasOwn(normalized.transactions[index] ?? {}, 'category')
+					Object.hasOwn(normalized.transactions[index] ?? {}, 'category') ||
+					Object.hasOwn(normalized.transactions[index] ?? {}, 'category_hint')
 				)
 			)
 		) {
@@ -448,15 +452,6 @@ function toCents(value) {
 	return isParenthesizedNegative ? -Math.abs(cents) : cents;
 }
 
-function deriveCategoryHint(description) {
-	const firstToken = String(description ?? '').trim().split(/\s+/).find(Boolean) ?? '';
-	const cleaned = firstToken.replace(/[^A-Za-z0-9]/g, '');
-	if (!cleaned) {
-		return 'UNKNOWN';
-	}
-	return cleaned.toUpperCase();
-}
-
 function normalizeCsvHeader(row) {
 	return row.map((entry, index) => {
 		const normalized = entry.toLowerCase().replace(/\s+/g, ' ').trim();
@@ -498,8 +493,6 @@ function buildTransactionsFromDepositCsvRows({rows, userId, institutionId, sourc
 
 		const amountCents = hasIn ? toCents(fundsIn) : -Math.abs(toCents(fundsOut));
 		const direction = hasIn ? 'CREDIT' : 'DEBIT';
-		const categoryHint = deriveCategoryHint(details);
-
 		transactions.push({
 			id: crypto.randomUUID(),
 			user_id: userId,
@@ -510,7 +503,6 @@ function buildTransactionsFromDepositCsvRows({rows, userId, institutionId, sourc
 			category_id: DEFAULT_CATEGORY_ID,
 			currency: 'CAD',
 			direction,
-			category_hint: categoryHint,
 			source: {
 				type: 'csv',
 				file_name: sourceFileName
@@ -543,8 +535,6 @@ function buildTransactionsFromAmexCsvRows({rows, userId, institutionId, sourceFi
 		// AMEX exports positive values for charges and negative values for payments/refunds.
 		const direction = rawAmountCents > 0 ? 'DEBIT' : 'CREDIT';
 		const amountCents = rawAmountCents > 0 ? -Math.abs(rawAmountCents) : Math.abs(rawAmountCents);
-		const categoryHint = deriveCategoryHint(description);
-
 		transactions.push({
 			id: crypto.randomUUID(),
 			user_id: userId,
@@ -555,7 +545,6 @@ function buildTransactionsFromAmexCsvRows({rows, userId, institutionId, sourceFi
 			category_id: DEFAULT_CATEGORY_ID,
 			currency: 'CAD',
 			direction,
-			category_hint: categoryHint,
 			source: {
 				type: 'csv',
 				file_name: sourceFileName
@@ -618,7 +607,7 @@ export async function previewTransactionsCsvImport({userId, institutionId, csvPa
 	};
 }
 
-export async function importTransactionsToDatabase({institutionId, transactions}) {
+export async function importTransactionsToDatabase({institutionId, transactions, categories = []}) {
 	const raw = await fs.readFile(DB_PATH, 'utf8');
 	const parsed = JSON.parse(raw);
 	const {normalized} = normalizeDatabaseShape(parsed);
@@ -629,9 +618,30 @@ export async function importTransactionsToDatabase({institutionId, transactions}
 		throw new Error('Institution not found.');
 	}
 
+	const existingCategoryById = new Map(
+		(normalized.categories ?? []).map((item) => [item.id, item])
+	);
+	const normalizedIncomingCategories = (categories ?? [])
+		.map(normalizeCategory)
+		.filter((category) => category !== null);
+	for (const category of normalizedIncomingCategories) {
+		if (!existingCategoryById.has(category.id)) {
+			existingCategoryById.set(category.id, category);
+		}
+	}
+	if (!existingCategoryById.has(DEFAULT_CATEGORY_ID)) {
+		existingCategoryById.set(DEFAULT_CATEGORY_ID, DEFAULT_CATEGORY);
+	}
+	normalized.categories = [...existingCategoryById.values()];
+
 	const normalizedIncomingTransactions = (transactions ?? [])
 		.map(normalizeTransaction)
 		.filter((transaction) => transaction !== null);
+	for (const transaction of normalizedIncomingTransactions) {
+		if (!existingCategoryById.has(transaction.category_id)) {
+			transaction.category_id = DEFAULT_CATEGORY_ID;
+		}
+	}
 	normalized.transactions = [...(normalized.transactions ?? []), ...normalizedIncomingTransactions];
 	institution.transaction_ids = [
 		...(institution.transaction_ids ?? []),
@@ -644,7 +654,10 @@ export async function importTransactionsToDatabase({institutionId, transactions}
 	};
 
 	await fs.writeFile(DB_PATH, JSON.stringify(normalized, null, 2), 'utf8');
-	return normalizedIncomingTransactions.length;
+	return {
+		count: normalizedIncomingTransactions.length,
+		categories: normalized.categories ?? []
+	};
 }
 
 export function isValidTimezone(timezone) {

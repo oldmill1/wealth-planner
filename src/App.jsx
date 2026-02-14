@@ -1,4 +1,4 @@
-import React, {useEffect, useMemo, useState} from 'react';
+import React, {useEffect, useMemo, useRef, useState} from 'react';
 import {Box, Text, useApp, useInput, useStdout} from 'ink';
 
 import {AddCreditAccountModal} from './components/AddCreditAccountModal.jsx';
@@ -18,6 +18,7 @@ import {
 	previewTransactionsCsvImport,
 	saveFirstUser
 } from './services/database.js';
+import {categorizeTransactionsInBatches} from './services/ai/categorizeTransactions.js';
 import {executeCommand, loadOrInitCommandRegistry} from './services/commands.js';
 
 function mapInstitutionToRow(institution) {
@@ -102,6 +103,21 @@ function fuzzyMatch(query, value) {
 	return qi === q.length;
 }
 
+function mergeCategories(existingCategories, incomingCategories) {
+	const byId = new Map(
+		(existingCategories ?? []).map((item) => [item.id, item])
+	);
+	for (const category of incomingCategories ?? []) {
+		if (!category || typeof category !== 'object') {
+			continue;
+		}
+		if (!byId.has(category.id)) {
+			byId.set(category.id, category);
+		}
+	}
+	return [...byId.values()];
+}
+
 export function App() {
 	const {exit} = useApp();
 	const {stdout} = useStdout();
@@ -138,7 +154,9 @@ export function App() {
 	const [transactionPreview, setTransactionPreview] = useState(null);
 	const [isImportingTransactions, setIsImportingTransactions] = useState(false);
 	const [transactions, setTransactions] = useState([]);
+	const [categories, setCategories] = useState([]);
 	const [userActivities, setUserActivities] = useState([]);
+	const transactionCategorizationRunRef = useRef(0);
 	const uploadTargetTypes = useMemo(() => {
 		if (currentTab === 'Balances') {
 			return new Set(['BANK']);
@@ -198,6 +216,7 @@ export function App() {
 				setUser(bios.user);
 				setAccountRows((bios.accounts ?? bios.institutions ?? []).map(mapInstitutionToRow));
 				setTransactions(bios.transactions ?? []);
+				setCategories(bios.categories ?? []);
 				setUserActivities(bios.userActivity ?? []);
 				setBootState('ready');
 			} catch (error) {
@@ -392,9 +411,11 @@ export function App() {
 			const hasInstitutions = transactionInstitutionRows.length > 0;
 
 			if (key.escape) {
+				transactionCategorizationRunRef.current += 1;
 				setIsAddTransactionsModalOpen(false);
 				setTransactionImportStep('form');
 				setTransactionPreview(null);
+				setIsImportingTransactions(false);
 				setCommandMessage('Add transactions cancelled.');
 				return;
 			}
@@ -427,21 +448,53 @@ export function App() {
 
 				if (transactionImportStep === 'form') {
 					setIsImportingTransactions(true);
+					const runId = transactionCategorizationRunRef.current + 1;
+					transactionCategorizationRunRef.current = runId;
 					const selectedInstitution = transactionInstitutionRows[transactionInstitutionIndex];
 					previewTransactionsCsvImport({
 						userId: user.id,
 						institutionId: selectedInstitution.id,
 						csvPath: transactionCsvPathInput
 					})
-						.then((preview) => {
+						.then(async (preview) => {
+							if (runId !== transactionCategorizationRunRef.current) {
+								return;
+							}
 							setTransactionPreview(preview);
+							setTransactionImportStep('categorizing');
+
+							const categorized = await categorizeTransactionsInBatches({
+								transactions: preview.transactions.map((item) => ({...item})),
+								existingCategories: categories,
+								batchSize: 100
+							});
+							if (runId !== transactionCategorizationRunRef.current) {
+								return;
+							}
+
+							setTransactionPreview({
+								...preview,
+								transactions: categorized.transactions,
+								categories: categorized.categories,
+								categorization: categorized.summary
+							});
 							setTransactionImportStep('preview');
+							setCommandMessage(
+								`Categorized ${categorized.summary.categorized}/${categorized.summary.total} transactions.`
+							);
 						})
 						.catch((error) => {
+							if (runId !== transactionCategorizationRunRef.current) {
+								return;
+							}
+							setTransactionImportStep('form');
+							setTransactionPreview(null);
 							setCommandMessage(`Preview failed: ${error.message}`);
 						})
 						.finally(() => {
-							setIsImportingTransactions(false);
+							if (runId === transactionCategorizationRunRef.current) {
+								setIsImportingTransactions(false);
+							}
 						});
 					return;
 				}
@@ -456,12 +509,14 @@ export function App() {
 					const selectedInstitution = transactionInstitutionRows[transactionInstitutionIndex];
 					importTransactionsToDatabase({
 						institutionId: selectedInstitution.id,
-						transactions: transactionPreview.transactions
+						transactions: transactionPreview.transactions,
+						categories: transactionPreview.categories ?? categories
 					})
-						.then((count) => {
-							setCommandMessage(`Imported ${count} transactions.`);
+						.then((result) => {
+							setCommandMessage(`Imported ${result.count} transactions.`);
 							const nowIso = new Date().toISOString();
 							setTransactions((prev) => [...prev, ...transactionPreview.transactions]);
+							setCategories((prev) => mergeCategories(prev, result.categories ?? []));
 							setAccountRows((prev) => prev.map((item) => (
 								item.id === selectedInstitution.id
 									? {...item, updatedAt: nowIso, lastUpdated: formatLastUpdated(nowIso)}
@@ -564,8 +619,10 @@ export function App() {
 					setSelectedSuggestionIndex(0);
 					setCommandMessage('');
 					setTransactionInstitutionIndex(0);
+					transactionCategorizationRunRef.current += 1;
 					setTransactionImportStep('form');
 					setTransactionPreview(null);
+					setIsImportingTransactions(false);
 					setIsAddTransactionsModalOpen(true);
 					return;
 				}
@@ -578,6 +635,7 @@ export function App() {
 							setUser(null);
 							setAccountRows([]);
 							setTransactions([]);
+							setCategories([]);
 							setUserActivities([]);
 							setNameInput('');
 							setTimezoneInput(DEFAULT_TIMEZONE);
@@ -669,6 +727,7 @@ export function App() {
 						setUser(savedUser);
 						setAccountRows([]);
 						setTransactions([]);
+						setCategories([]);
 						setUserActivities([]);
 						setBootState('ready');
 					})

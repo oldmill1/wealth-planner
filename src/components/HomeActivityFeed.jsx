@@ -22,7 +22,7 @@ export function HomeActivityFeed({activities, width = 44}) {
 			paddingY={0}
 		>
 			<Text color="#aab2da">Activity</Text>
-			{activities.length === 0 && <Text color="#626b9b">No activity yet</Text>}
+			{activities.length === 0 && <Text color="#626b9b">All quiet on the western front. </Text>}
 			{activities.map((activity, index) => (
 				<Box key={activity.id} flexDirection="column">
 					{index > 0 && <Text color="#111527"> </Text>}
