@@ -37,7 +37,9 @@ export function Dashboard({
 	terminalWidth,
 	institutionRows,
 	searchLabel = 'institution:all',
-	summaryLabel = 'Institutions'
+	summaryLabel = 'Institutions',
+	hasBalances = false,
+	hasCredits = false
 }) {
 	const leftPaneWidth = Math.max(56, Math.floor(terminalWidth * 0.62));
 	const rightPaneWidth = Math.max(28, terminalWidth - leftPaneWidth - 6);
@@ -71,16 +73,16 @@ export function Dashboard({
 					paddingY={1}
 				>
 					<Text color="#aeb2df">
-						<Text color="#6f7396">● </Text>
-						<Text color="#8f93bf">Add Balances</Text>
+						<Text color={hasBalances ? '#58d7a3' : '#6f7396'}>● </Text>
+						<Text color={hasBalances ? '#c5c8ff' : '#8f93bf'}>Add Deposit Account</Text>
 					</Text>
-					<Text color="#6f7396">  Eg your primary chequing account</Text>
+					<Text color={hasBalances ? '#8f93bf' : '#6f7396'}>  Eg your chequing account</Text>
 					<Text color="#2f325a">{'-'.repeat(Math.max(14, checklistWidth - 6))}</Text>
 					<Text color="#aeb2df">
-						<Text color="#58d7a3">● </Text>
-						<Text color="#c5c8ff">Add Credits</Text>
+						<Text color={hasCredits ? '#58d7a3' : '#6f7396'}>● </Text>
+						<Text color={hasCredits ? '#c5c8ff' : '#8f93bf'}>Add Credit Account</Text>
 					</Text>
-					<Text color="#8f93bf">  Eg your primary credit card</Text>
+					<Text color={hasCredits ? '#8f93bf' : '#6f7396'}>  Eg your American Express card</Text>
 				</Box>
 			</Box>
 		</Box>

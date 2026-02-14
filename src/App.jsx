@@ -21,6 +21,7 @@ import {executeCommand, loadOrInitCommandRegistry} from './services/commands.js'
 function mapInstitutionToRow(institution) {
 	return {
 		id: institution.id,
+		userId: institution.user_id,
 		type: institution.type,
 		name: institution.name,
 		status: 'CONNECTED',
@@ -633,6 +634,10 @@ export function App() {
 	});
 
 	const content = useMemo(() => {
+		const currentUserRows = institutionRows.filter((row) => row.userId === user?.id);
+		const hasBalances = currentUserRows.some((row) => row.type === 'BANK');
+		const hasCredits = currentUserRows.some((row) => row.type === 'CREDIT' || row.type === 'CREDIT_CARD');
+
 		if (bootState === 'booting') {
 			return (
 				<>
@@ -682,7 +687,7 @@ export function App() {
 		}
 
 		if (bootState === 'ready' && currentTab === 'Balances') {
-			const institutionOnlyRows = institutionRows.filter((row) => row.type === 'BANK');
+			const institutionOnlyRows = currentUserRows.filter((row) => row.type === 'BANK');
 			const tableRows = withEmptyInstitutionRow(
 				institutionOnlyRows,
 				'Add First Deposit Account',
@@ -700,6 +705,8 @@ export function App() {
 							institutionRows={tableRows}
 							searchLabel="institution:all"
 							summaryLabel="Balances"
+							hasBalances={hasBalances}
+							hasCredits={hasCredits}
 						/>
 					</Box>
 					<Text color="#777898">Press q to quit</Text>
@@ -708,7 +715,7 @@ export function App() {
 		}
 
 		if (bootState === 'ready' && currentTab === 'Credit') {
-			const creditCardRows = institutionRows.filter((row) => row.type === 'CREDIT' || row.type === 'CREDIT_CARD');
+			const creditCardRows = currentUserRows.filter((row) => row.type === 'CREDIT' || row.type === 'CREDIT_CARD');
 			const tableRows = withEmptyInstitutionRow(
 				creditCardRows,
 				'Add First Credit Card',
@@ -726,6 +733,8 @@ export function App() {
 							institutionRows={tableRows}
 							searchLabel="credit_card:all"
 							summaryLabel="Credit Cards"
+							hasBalances={hasBalances}
+							hasCredits={hasCredits}
 						/>
 					</Box>
 					<Text color="#777898">Press q to quit</Text>
