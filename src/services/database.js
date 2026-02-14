@@ -361,6 +361,15 @@ function toCents(value) {
 	return isParenthesizedNegative ? -Math.abs(cents) : cents;
 }
 
+function deriveCategoryHint(description) {
+	const firstToken = String(description ?? '').trim().split(/\s+/).find(Boolean) ?? '';
+	const cleaned = firstToken.replace(/[^A-Za-z0-9]/g, '');
+	if (!cleaned) {
+		return 'UNKNOWN';
+	}
+	return cleaned.toUpperCase();
+}
+
 function normalizeCsvHeader(row) {
 	return row.map((entry, index) => {
 		const normalized = entry.toLowerCase().replace(/\s+/g, ' ').trim();
@@ -402,7 +411,7 @@ function buildTransactionsFromDepositCsvRows({rows, userId, institutionId, sourc
 
 		const amountCents = hasIn ? toCents(fundsIn) : -Math.abs(toCents(fundsOut));
 		const direction = hasIn ? 'CREDIT' : 'DEBIT';
-		const categoryHint = details.split(/\s+/).find(Boolean) ?? 'UNKNOWN';
+		const categoryHint = deriveCategoryHint(details);
 
 		transactions.push({
 			id: crypto.randomUUID(),
@@ -446,7 +455,7 @@ function buildTransactionsFromAmexCsvRows({rows, userId, institutionId, sourceFi
 		// AMEX exports positive values for charges and negative values for payments/refunds.
 		const direction = rawAmountCents > 0 ? 'DEBIT' : 'CREDIT';
 		const amountCents = rawAmountCents > 0 ? -Math.abs(rawAmountCents) : Math.abs(rawAmountCents);
-		const categoryHint = description.split(/\s+/).find(Boolean) ?? 'UNKNOWN';
+		const categoryHint = deriveCategoryHint(description);
 
 		transactions.push({
 			id: crypto.randomUUID(),
