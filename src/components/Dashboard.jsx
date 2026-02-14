@@ -41,6 +41,7 @@ export function Dashboard({
 }) {
 	const leftPaneWidth = Math.max(56, Math.floor(terminalWidth * 0.62));
 	const rightPaneWidth = Math.max(28, terminalWidth - leftPaneWidth - 6);
+	const checklistWidth = Math.max(24, rightPaneWidth - 2);
 
 	return (
 		<Box width="100%" paddingX={1} paddingY={1} flexDirection="row">
@@ -61,10 +62,26 @@ export function Dashboard({
 				<Text color="#2f325a">│</Text>
 			</Box>
 			<Box width={rightPaneWidth} flexDirection="column" paddingX={1}>
-				<Text color="#c5c8ff">Checklist</Text>
-				<Text color="#2f325a">{'-'.repeat(Math.max(18, rightPaneWidth - 2))}</Text>
-				<Text color="#aeb2df">[ ] Add Balances</Text>
-				<Text color="#aeb2df">[x] Add Credit Card</Text>
+				<Box
+					width={checklistWidth}
+					flexDirection="column"
+					borderStyle="round"
+					borderColor="#2f325a"
+					paddingX={2}
+					paddingY={1}
+				>
+					<Text color="#aeb2df">
+						<Text color="#6f7396">● </Text>
+						<Text color="#8f93bf">Add Balances</Text>
+					</Text>
+					<Text color="#6f7396">  Eg your primary chequing account</Text>
+					<Text color="#2f325a">{'-'.repeat(Math.max(14, checklistWidth - 6))}</Text>
+					<Text color="#aeb2df">
+						<Text color="#58d7a3">● </Text>
+						<Text color="#c5c8ff">Add Credits</Text>
+					</Text>
+					<Text color="#8f93bf">  Eg your primary credit card</Text>
+				</Box>
 			</Box>
 		</Box>
 	);
