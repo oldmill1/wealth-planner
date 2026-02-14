@@ -15,12 +15,6 @@ const COLUMNS = [
 		formatter: (item) => item.name
 	},
 	{
-		key: 'status',
-		label: 'Status',
-		minWidth: 16,
-		formatter: (item) => item.status
-	},
-	{
 		key: 'balance',
 		label: 'Balance',
 		minWidth: 10,
@@ -60,6 +54,48 @@ function renderTableLine(item, columnWidths) {
 	)).join(' ');
 }
 
+function TableLine({item, columnWidths, baseColor, getColumnColor}) {
+	return (
+		<Box flexDirection="row">
+			{COLUMNS.map((column, index) => {
+				const text = pad(column.formatter(item), columnWidths[index]);
+				const color = typeof getColumnColor === 'function'
+					? getColumnColor(column.key, baseColor)
+					: baseColor;
+				return (
+					<React.Fragment key={column.key}>
+						<Text color={color}>{text}</Text>
+						{index < COLUMNS.length - 1 && <Text color={baseColor}> </Text>}
+					</React.Fragment>
+				);
+			})}
+		</Box>
+	);
+}
+
+function splitDisplayName(rawName) {
+	const normalized = String(rawName ?? '').replace(/\s+/g, ' ').trim();
+	if (!normalized) {
+		return {primary: '', secondary: ''};
+	}
+
+	let base = normalized;
+	if (/ credit card$/i.test(base)) {
+		base = base.replace(/ credit card$/i, '').trim();
+	} else if (/ account$/i.test(base)) {
+		base = base.replace(/ account$/i, '').trim();
+	}
+
+	const parts = base.split(' ').filter(Boolean);
+	if (parts.length === 1) {
+		return {primary: parts[0], secondary: ''};
+	}
+
+	const primary = parts[parts.length - 1];
+	const secondary = parts.slice(0, -1).join(' ');
+	return {primary, secondary};
+}
+
 function InstitutionRow({item, isSelected, leftPaneWidth}) {
 	if (item.isPlaceholder) {
 		return (
@@ -71,11 +107,22 @@ function InstitutionRow({item, isSelected, leftPaneWidth}) {
 
 	const safeWidth = Math.max(56, leftPaneWidth - 8);
 	const columnWidths = computeColumnWidths(safeWidth);
-	const line = renderTableLine(item, columnWidths);
+	const {primary, secondary} = splitDisplayName(item.name);
+	const lineOneItem = {...item, name: primary};
+	const lineTwo = renderTableLine(
+		{...item, type: '', name: secondary, balance: '', lastUpdated: ''},
+		columnWidths
+	);
 
 	return (
-		<Box width="100%" paddingX={1} backgroundColor={isSelected ? '#24264a' : undefined}>
-			<Text color={isSelected ? '#d4d6ff' : '#8f93bf'}>{line}</Text>
+		<Box width="100%" paddingX={1} flexDirection="column" backgroundColor={isSelected ? '#24264a' : undefined}>
+			<TableLine
+				item={lineOneItem}
+				columnWidths={columnWidths}
+				baseColor={isSelected ? '#d4d6ff' : '#8f93bf'}
+				getColumnColor={(key, fallback) => (key === 'name' ? '#7A80AC' : fallback)}
+			/>
+			<Text color={isSelected ? '#b9bee8' : '#6f7396'}>{lineTwo}</Text>
 		</Box>
 	);
 }
@@ -99,7 +146,6 @@ export function Dashboard({
 	return (
 		<Box width="100%" paddingX={1} paddingY={1} flexDirection="row">
 			<Box width={leftPaneWidth} flexDirection="column" paddingX={1}>
-				<Text color="#7d83c8"> [Search] {searchLabel} status:any user:current</Text>
 				<Text color="#2f325a">{'-'.repeat(Math.max(30, leftPaneWidth - 4))}</Text>
 				<Box width="100%" paddingX={1}>
 					<Text color="#aeb2df">{tableHeader}</Text>
@@ -109,7 +155,6 @@ export function Dashboard({
 					<InstitutionRow key={item.id} item={item} isSelected={index === 0} leftPaneWidth={leftPaneWidth} />
 				))}
 				<Text color="#2f325a">{'-'.repeat(Math.max(30, leftPaneWidth - 4))}</Text>
-				<Text color="#777898"> Source: ~/.config/wealth-planner/main.json</Text>
 			</Box>
 			<Box width={1}>
 				<Text color="#2f325a">│</Text>

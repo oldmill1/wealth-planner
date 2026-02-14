@@ -26,7 +26,6 @@ function mapInstitutionToRow(institution) {
 		userId: institution.user_id,
 		type: institution.type,
 		name: institution.name,
-		status: 'CONNECTED',
 		balance: '--',
 		updatedAt,
 		lastUpdated: formatLastUpdated(updatedAt),
@@ -68,7 +67,6 @@ function withEmptyInstitutionRow(rows, placeholderLabel = 'Add First Deposit Acc
 			id: placeholderId,
 			type: 'ACTION',
 			name: placeholderLabel,
-			status: '',
 			balance: '',
 			lastUpdated: '',
 			accountMask: '',
@@ -735,7 +733,6 @@ export function App() {
 							hasCredits={hasCredits}
 						/>
 					</Box>
-					<Text color="#777898">Press q to quit</Text>
 				</>
 			);
 		}
@@ -761,7 +758,6 @@ export function App() {
 							hasCredits={hasCredits}
 						/>
 					</Box>
-					<Text color="#777898">Press q to quit</Text>
 				</>
 			);
 		}
