@@ -237,14 +237,15 @@ export async function addInstitutionForUser({userId, name, type = 'BANK'}) {
 	return institution;
 }
 
-function parseCsvLine(line) {
-	const values = [];
+function parseCsvRows(csvContent) {
+	const rows = [];
+	let row = [];
 	let current = '';
 	let inQuotes = false;
 
-	for (let i = 0; i < line.length; i += 1) {
-		const char = line[i];
-		const next = line[i + 1];
+	for (let i = 0; i < csvContent.length; i += 1) {
+		const char = csvContent[i];
+		const next = csvContent[i + 1];
 
 		if (char === '"') {
 			if (inQuotes && next === '"') {
@@ -256,8 +257,22 @@ function parseCsvLine(line) {
 			continue;
 		}
 
+		if ((char === '\n' || char === '\r') && !inQuotes) {
+			if (char === '\r' && next === '\n') {
+				i += 1;
+			}
+
+			row.push(current.trim());
+			current = '';
+			if (row.some((value) => value.length > 0)) {
+				rows.push(row);
+			}
+			row = [];
+			continue;
+		}
+
 		if (char === ',' && !inQuotes) {
-			values.push(current.trim());
+			row.push(current.trim());
 			current = '';
 			continue;
 		}
@@ -265,8 +280,12 @@ function parseCsvLine(line) {
 		current += char;
 	}
 
-	values.push(current.trim());
-	return values;
+	row.push(current.trim());
+	if (row.some((value) => value.length > 0)) {
+		rows.push(row);
+	}
+
+	return rows;
 }
 
 function resolveCsvPath(inputPath) {
@@ -294,11 +313,78 @@ function parseUsDateToIso(dateString) {
 	return `${yyyy.padStart(4, '0')}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`;
 }
 
-function toCents(value) {
-	return Math.round(Number.parseFloat(value) * 100);
+const MONTH_BY_NAME = {
+	jan: '01',
+	feb: '02',
+	mar: '03',
+	apr: '04',
+	may: '05',
+	jun: '06',
+	jul: '07',
+	aug: '08',
+	sep: '09',
+	oct: '10',
+	nov: '11',
+	dec: '12'
+};
+
+function parseMonthNameDateToIso(dateString) {
+	const match = String(dateString ?? '').trim().match(/^(\d{1,2})\s+([A-Za-z]{3,})\s+(\d{4})$/);
+	if (!match) {
+		throw new Error(`Invalid date format: ${dateString}`);
+	}
+
+	const [, dayRaw, monthRaw, yearRaw] = match;
+	const month = MONTH_BY_NAME[monthRaw.slice(0, 3).toLowerCase()];
+	if (!month) {
+		throw new Error(`Invalid month in date: ${dateString}`);
+	}
+
+	return `${yearRaw}-${month}-${dayRaw.padStart(2, '0')}`;
 }
 
-function buildTransactionsFromCsvRows({rows, userId, institutionId, sourceFileName}) {
+function toCents(value) {
+	const raw = String(value ?? '').trim();
+	if (!raw) {
+		return 0;
+	}
+
+	const isParenthesizedNegative = raw.startsWith('(') && raw.endsWith(')');
+	const unwrapped = isParenthesizedNegative ? raw.slice(1, -1) : raw;
+	const normalized = unwrapped.replaceAll(',', '').replaceAll('$', '').replace(/\s+/g, '');
+	const parsed = Number.parseFloat(normalized);
+	if (Number.isNaN(parsed)) {
+		throw new Error(`Invalid amount: ${value}`);
+	}
+
+	const cents = Math.round(parsed * 100);
+	return isParenthesizedNegative ? -Math.abs(cents) : cents;
+}
+
+function normalizeCsvHeader(row) {
+	return row.map((entry, index) => {
+		const normalized = entry.toLowerCase().replace(/\s+/g, ' ').trim();
+		return index === 0 ? normalized.replace(/^\ufeff/, '') : normalized;
+	});
+}
+
+function isDepositCsvHeader(header) {
+	return header.length >= 4 &&
+		header[0] === 'date' &&
+		header[1] === 'transaction details' &&
+		header[2] === 'funds out' &&
+		header[3] === 'funds in';
+}
+
+function isAmexCsvHeader(header) {
+	return header.length >= 4 &&
+		header[0] === 'date' &&
+		header[1] === 'date processed' &&
+		header[2] === 'description' &&
+		header[3] === 'amount';
+}
+
+function buildTransactionsFromDepositCsvRows({rows, userId, institutionId, sourceFileName}) {
 	const now = new Date().toISOString();
 	const transactions = [];
 
@@ -314,7 +400,7 @@ function buildTransactionsFromCsvRows({rows, userId, institutionId, sourceFileNa
 			continue;
 		}
 
-		const amountCents = hasIn ? toCents(fundsIn) : -toCents(fundsOut);
+		const amountCents = hasIn ? toCents(fundsIn) : -Math.abs(toCents(fundsOut));
 		const direction = hasIn ? 'CREDIT' : 'DEBIT';
 		const categoryHint = details.split(/\s+/).find(Boolean) ?? 'UNKNOWN';
 
@@ -340,35 +426,84 @@ function buildTransactionsFromCsvRows({rows, userId, institutionId, sourceFileNa
 	return transactions;
 }
 
+function buildTransactionsFromAmexCsvRows({rows, userId, institutionId, sourceFileName}) {
+	const now = new Date().toISOString();
+	const transactions = [];
+
+	for (const row of rows) {
+		const [dateRaw, _dateProcessedRaw, descriptionRaw, amountRaw] = row;
+		const description = (descriptionRaw ?? '').trim();
+		const amountText = (amountRaw ?? '').trim();
+		if (!description || !amountText) {
+			continue;
+		}
+
+		const rawAmountCents = toCents(amountText);
+		if (rawAmountCents === 0) {
+			continue;
+		}
+
+		// AMEX exports positive values for charges and negative values for payments/refunds.
+		const direction = rawAmountCents > 0 ? 'DEBIT' : 'CREDIT';
+		const amountCents = rawAmountCents > 0 ? -Math.abs(rawAmountCents) : Math.abs(rawAmountCents);
+		const categoryHint = description.split(/\s+/).find(Boolean) ?? 'UNKNOWN';
+
+		transactions.push({
+			id: crypto.randomUUID(),
+			user_id: userId,
+			institution_id: institutionId,
+			posted_at: parseMonthNameDateToIso((dateRaw ?? '').trim()),
+			description_raw: description,
+			amount_cents: amountCents,
+			currency: 'CAD',
+			direction,
+			category_hint: categoryHint,
+			source: {
+				type: 'csv',
+				file_name: sourceFileName
+			},
+			created_at: now,
+			updated_at: now
+		});
+	}
+
+	return transactions;
+}
+
 export async function previewTransactionsCsvImport({userId, institutionId, csvPath}) {
 	const resolvedPath = resolveCsvPath(csvPath);
 	const csvContent = await fs.readFile(resolvedPath, 'utf8');
-	const lines = csvContent
-		.split(/\r?\n/)
-		.map((line) => line.trimEnd())
-		.filter((line) => line.length > 0);
+	const rows = parseCsvRows(csvContent);
 
-	if (lines.length <= 1) {
+	if (rows.length <= 1) {
 		throw new Error('CSV has no transaction rows.');
 	}
 
-	const header = parseCsvLine(lines[0]).map((entry) => entry.toLowerCase().replace(/\s+/g, ' ').trim());
-	const hasExpectedHeader = header.length >= 4 &&
-		header[0] === 'date' &&
-		header[1] === 'transaction details' &&
-		header[2] === 'funds out' &&
-		header[3] === 'funds in';
-	if (!hasExpectedHeader) {
-		throw new Error('Unexpected CSV header. Expected: Date, Transaction Details, Funds Out, Funds In');
-	}
+	const header = normalizeCsvHeader(rows[0]);
+	const dataRows = rows.slice(1);
+	let transactions = [];
 
-	const dataRows = lines.slice(1).map(parseCsvLine);
-	const transactions = buildTransactionsFromCsvRows({
-		rows: dataRows,
-		userId,
-		institutionId,
-		sourceFileName: path.basename(resolvedPath)
-	});
+	if (isDepositCsvHeader(header)) {
+		transactions = buildTransactionsFromDepositCsvRows({
+			rows: dataRows,
+			userId,
+			institutionId,
+			sourceFileName: path.basename(resolvedPath)
+		});
+	} else if (isAmexCsvHeader(header)) {
+		transactions = buildTransactionsFromAmexCsvRows({
+			rows: dataRows,
+			userId,
+			institutionId,
+			sourceFileName: path.basename(resolvedPath)
+		});
+	} else {
+		throw new Error(
+			'Unexpected CSV header. Supported formats: ' +
+			'Date, Transaction Details, Funds Out, Funds In ' +
+			'or Date, Date Processed, Description, Amount'
+		);
+	}
 
 	if (transactions.length === 0) {
 		throw new Error('No importable transactions found in CSV.');
