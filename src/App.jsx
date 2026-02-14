@@ -19,6 +19,8 @@ import {
 import {executeCommand, loadOrInitCommandRegistry} from './services/commands.js';
 
 function mapInstitutionToRow(institution) {
+	const updatedAt = institution.updated_at ?? null;
+
 	return {
 		id: institution.id,
 		userId: institution.user_id,
@@ -26,9 +28,34 @@ function mapInstitutionToRow(institution) {
 		name: institution.name,
 		status: 'CONNECTED',
 		balance: '--',
-		lastUpdated: 'just now',
+		updatedAt,
+		lastUpdated: formatLastUpdated(updatedAt),
 		accountMask: '...'
 	};
+}
+
+function formatLastUpdated(updatedAt) {
+	if (!updatedAt) {
+		return 'unknown';
+	}
+
+	const updatedMs = Date.parse(updatedAt);
+	if (Number.isNaN(updatedMs)) {
+		return 'unknown';
+	}
+
+	const diffSeconds = Math.max(0, Math.floor((Date.now() - updatedMs) / 1000));
+	if (diffSeconds < 60) {
+		return 'just now';
+	}
+	if (diffSeconds < 3600) {
+		return `${Math.floor(diffSeconds / 60)}m ago`;
+	}
+	if (diffSeconds < 86400) {
+		return `${Math.floor(diffSeconds / 3600)}h ago`;
+	}
+
+	return `${Math.floor(diffSeconds / 86400)}d ago`;
 }
 
 function withEmptyInstitutionRow(rows, placeholderLabel = 'Add First Deposit Account', placeholderId = 'add_first_institution') {
@@ -411,9 +438,10 @@ export function App() {
 					})
 						.then((count) => {
 							setCommandMessage(`Imported ${count} transactions.`);
+							const nowIso = new Date().toISOString();
 							setAccountRows((prev) => prev.map((item) => (
 								item.id === selectedInstitution.id
-									? {...item, lastUpdated: 'just now'}
+									? {...item, updatedAt: nowIso, lastUpdated: formatLastUpdated(nowIso)}
 									: item
 							)));
 							setIsAddTransactionsModalOpen(false);
@@ -696,8 +724,6 @@ export function App() {
 
 			return (
 				<>
-					<Text color="#c5c8ff">Balances Workspace</Text>
-					<Text color="#777898">Loaded from local database</Text>
 					<Text color="#777898"> </Text>
 					<Box width="100%" flexDirection="column">
 						<Dashboard
@@ -724,8 +750,6 @@ export function App() {
 
 			return (
 				<>
-					<Text color="#c5c8ff">Credit Workspace</Text>
-					<Text color="#777898">Loaded from local database</Text>
 					<Text color="#777898"> </Text>
 					<Box width="100%" flexDirection="column">
 						<Dashboard
