@@ -1,6 +1,7 @@
 import {askAi} from './index.js';
 
 const DEFAULT_CATEGORY_ID = 'uncategorized';
+const DEFAULT_CATEGORY_PATH = 'Uncategorized';
 const DEFAULT_BATCH_SIZE = 100;
 const CONFIDENCE_THRESHOLD = 0.7;
 
@@ -95,7 +96,7 @@ function getAssignmentsFromAnswer(answerJson) {
 
 function upsertPathCategories(categoriesById, pathSegments) {
 	if (pathSegments.length === 0) {
-		return DEFAULT_CATEGORY_ID;
+		return DEFAULT_CATEGORY_PATH;
 	}
 
 	let parentId = null;
@@ -112,7 +113,7 @@ function upsertPathCategories(categoriesById, pathSegments) {
 		parentId = id;
 	}
 
-	return lastId;
+	return pathSegments.join(' > ');
 }
 
 export async function categorizeTransactionsInBatches({
@@ -193,11 +194,11 @@ export async function categorizeTransactionsInBatches({
 				pathSegments[0].toLowerCase() === 'uncategorized';
 
 			if (!assignment || confidence < CONFIDENCE_THRESHOLD || pathSegments.length === 0 || isUncategorizedPath) {
-				transaction.category_id = DEFAULT_CATEGORY_ID;
+				transaction.category_path = DEFAULT_CATEGORY_PATH;
 				continue;
 			}
 
-			transaction.category_id = upsertPathCategories(categoriesById, pathSegments);
+			transaction.category_path = upsertPathCategories(categoriesById, pathSegments);
 			categorizedCount += 1;
 		}
 	}

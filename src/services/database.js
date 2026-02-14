@@ -5,9 +5,10 @@ import path from 'node:path';
 import {DB_PATH, CONFIG_DIR, INSTITUTION_TYPES} from '../constants.js';
 
 const DEFAULT_CATEGORY_ID = 'uncategorized';
+const DEFAULT_CATEGORY_PATH = 'Uncategorized';
 const DEFAULT_CATEGORY = {
 	id: DEFAULT_CATEGORY_ID,
-	name: 'Uncategorized',
+	name: DEFAULT_CATEGORY_PATH,
 	parent_id: null
 };
 
@@ -103,7 +104,94 @@ function normalizeCategory(record) {
 	};
 }
 
-function normalizeTransaction(record) {
+function slugifySegment(value) {
+	return String(value ?? '')
+		.trim()
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, '-')
+		.replace(/^-+|-+$/g, '');
+}
+
+function normalizePathSegments(rawPath) {
+	return String(rawPath ?? '')
+		.split('>')
+		.map((segment) => String(segment ?? '').replace(/\s+/g, ' ').trim())
+		.filter(Boolean);
+}
+
+function toTitleCaseSegment(value) {
+	return String(value ?? '')
+		.replace(/[-_]+/g, ' ')
+		.split(/\s+/)
+		.filter(Boolean)
+		.map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+		.join(' ');
+}
+
+function categoryIdToPath(categoryId, categoryById = new Map()) {
+	const normalizedId = String(categoryId ?? '').trim().toLowerCase();
+	if (!normalizedId) {
+		return DEFAULT_CATEGORY_PATH;
+	}
+	if (categoryById.has(normalizedId)) {
+		const names = [];
+		let cursor = normalizedId;
+		const visited = new Set();
+		while (cursor && categoryById.has(cursor) && !visited.has(cursor)) {
+			visited.add(cursor);
+			const node = categoryById.get(cursor);
+			names.unshift(node.name);
+			cursor = node.parent_id ?? null;
+		}
+		if (names.length > 0) {
+			return names.join(' > ');
+		}
+	}
+
+	const segments = normalizedId.split('.').map(toTitleCaseSegment).filter(Boolean);
+	return segments.length > 0 ? segments.join(' > ') : DEFAULT_CATEGORY_PATH;
+}
+
+function normalizeCategoryPath(rawPath) {
+	const segments = normalizePathSegments(rawPath);
+	return segments.length > 0 ? segments.join(' > ') : DEFAULT_CATEGORY_PATH;
+}
+
+function pathSegmentsToId(pathSegments) {
+	const slugs = pathSegments.map(slugifySegment).filter(Boolean);
+	return slugs.length > 0 ? slugs.join('.') : DEFAULT_CATEGORY_ID;
+}
+
+function deriveCategoriesFromTransactions(transactions) {
+	const byId = new Map();
+	byId.set(DEFAULT_CATEGORY_ID, DEFAULT_CATEGORY);
+
+	for (const transaction of transactions ?? []) {
+		const segments = normalizePathSegments(transaction?.category_path);
+		if (segments.length === 0) {
+			continue;
+		}
+
+		let parentId = null;
+		const partialSegments = [];
+		for (const segment of segments) {
+			partialSegments.push(segment);
+			const id = pathSegmentsToId(partialSegments);
+			if (!byId.has(id)) {
+				byId.set(id, {
+					id,
+					name: segment,
+					parent_id: parentId
+				});
+			}
+			parentId = id;
+		}
+	}
+
+	return [...byId.values()];
+}
+
+function normalizeTransaction(record, categoryById = new Map()) {
 	if (record === null || typeof record !== 'object') {
 		return null;
 	}
@@ -111,12 +199,17 @@ function normalizeTransaction(record) {
 	const normalized = {
 		...record
 	};
-	const categoryId = String(normalized.category_id ?? normalized.category ?? '')
-		.trim()
-		.toLowerCase();
-	normalized.category_id = categoryId || DEFAULT_CATEGORY_ID;
+	const categoryPath = String(normalized.category_path ?? '').trim();
+	const legacyCategory = String(normalized.category ?? '').trim();
+	const legacyCategoryId = String(normalized.category_id ?? '').trim().toLowerCase();
+	normalized.category_path = normalizeCategoryPath(
+		categoryPath || legacyCategory || categoryIdToPath(legacyCategoryId, categoryById)
+	);
 	if (Object.hasOwn(normalized, 'category')) {
 		delete normalized.category;
+	}
+	if (Object.hasOwn(normalized, 'category_id')) {
+		delete normalized.category_id;
 	}
 	if (Object.hasOwn(normalized, 'category_hint')) {
 		delete normalized.category_hint;
@@ -169,39 +262,29 @@ function normalizeDatabaseShape(parsed) {
 		normalized.accounts = sanitizedAccounts;
 	}
 
-	if (!Array.isArray(normalized.categories)) {
-		normalized.categories = [DEFAULT_CATEGORY];
-		changed = true;
-	} else {
-		const sanitizedCategories = normalized.categories
-			.map(normalizeCategory)
-			.filter((category) => category !== null);
-		const hasDefaultCategory = sanitizedCategories.some((category) => category.id === DEFAULT_CATEGORY_ID);
-		if (!hasDefaultCategory) {
-			sanitizedCategories.unshift(DEFAULT_CATEGORY);
-		}
-		if (
-			sanitizedCategories.length !== normalized.categories.length ||
-			!hasDefaultCategory
-		) {
-			changed = true;
-		}
-		normalized.categories = sanitizedCategories;
-	}
+	const sanitizedCategories = Array.isArray(normalized.categories)
+		? normalized.categories.map(normalizeCategory).filter((category) => category !== null)
+		: [DEFAULT_CATEGORY];
+	const hasDefaultCategory = sanitizedCategories.some((category) => category.id === DEFAULT_CATEGORY_ID);
+	const categoriesSeed = hasDefaultCategory
+		? sanitizedCategories
+		: [DEFAULT_CATEGORY, ...sanitizedCategories];
+	const categoriesById = new Map(categoriesSeed.map((category) => [category.id, category]));
 
 	if (!Array.isArray(normalized.transactions)) {
 		normalized.transactions = [];
 		changed = true;
 	} else {
 		const sanitizedTransactions = normalized.transactions
-			.map(normalizeTransaction)
+			.map((transaction) => normalizeTransaction(transaction, categoriesById))
 			.filter((transaction) => transaction !== null);
 		if (
 			sanitizedTransactions.length !== normalized.transactions.length ||
 			sanitizedTransactions.some(
 				(transaction, index) => (
-					transaction.category_id !== normalized.transactions[index]?.category_id ||
+					transaction.category_path !== normalized.transactions[index]?.category_path ||
 					Object.hasOwn(normalized.transactions[index] ?? {}, 'category') ||
+					Object.hasOwn(normalized.transactions[index] ?? {}, 'category_id') ||
 					Object.hasOwn(normalized.transactions[index] ?? {}, 'category_hint')
 				)
 			)
@@ -209,6 +292,15 @@ function normalizeDatabaseShape(parsed) {
 			changed = true;
 		}
 		normalized.transactions = sanitizedTransactions;
+	}
+
+	const derivedCategories = deriveCategoriesFromTransactions(normalized.transactions);
+	if (
+		!Array.isArray(normalized.categories) ||
+		JSON.stringify(derivedCategories) !== JSON.stringify(normalized.categories)
+	) {
+		normalized.categories = derivedCategories;
+		changed = true;
 	}
 
 	if (!Array.isArray(normalized.user_activity)) {
@@ -500,7 +592,7 @@ function buildTransactionsFromDepositCsvRows({rows, userId, institutionId, sourc
 			posted_at: parseUsDateToIso(dateRaw.trim()),
 			description_raw: details,
 			amount_cents: amountCents,
-			category_id: DEFAULT_CATEGORY_ID,
+			category_path: DEFAULT_CATEGORY_PATH,
 			currency: 'CAD',
 			direction,
 			source: {
@@ -542,7 +634,7 @@ function buildTransactionsFromAmexCsvRows({rows, userId, institutionId, sourceFi
 			posted_at: parseMonthNameDateToIso((dateRaw ?? '').trim()),
 			description_raw: description,
 			amount_cents: amountCents,
-			category_id: DEFAULT_CATEGORY_ID,
+			category_path: DEFAULT_CATEGORY_PATH,
 			currency: 'CAD',
 			direction,
 			source: {
@@ -619,30 +711,23 @@ export async function importTransactionsToDatabase({institutionId, transactions,
 	}
 
 	const existingCategoryById = new Map(
-		(normalized.categories ?? []).map((item) => [item.id, item])
+		[
+			...(normalized.categories ?? []),
+			...(categories ?? [])
+		]
+			.map(normalizeCategory)
+			.filter((category) => category !== null)
+			.map((category) => [category.id, category])
 	);
-	const normalizedIncomingCategories = (categories ?? [])
-		.map(normalizeCategory)
-		.filter((category) => category !== null);
-	for (const category of normalizedIncomingCategories) {
-		if (!existingCategoryById.has(category.id)) {
-			existingCategoryById.set(category.id, category);
-		}
-	}
 	if (!existingCategoryById.has(DEFAULT_CATEGORY_ID)) {
 		existingCategoryById.set(DEFAULT_CATEGORY_ID, DEFAULT_CATEGORY);
 	}
-	normalized.categories = [...existingCategoryById.values()];
 
 	const normalizedIncomingTransactions = (transactions ?? [])
-		.map(normalizeTransaction)
+		.map((transaction) => normalizeTransaction(transaction, existingCategoryById))
 		.filter((transaction) => transaction !== null);
-	for (const transaction of normalizedIncomingTransactions) {
-		if (!existingCategoryById.has(transaction.category_id)) {
-			transaction.category_id = DEFAULT_CATEGORY_ID;
-		}
-	}
 	normalized.transactions = [...(normalized.transactions ?? []), ...normalizedIncomingTransactions];
+	normalized.categories = deriveCategoriesFromTransactions(normalized.transactions);
 	institution.transaction_ids = [
 		...(institution.transaction_ids ?? []),
 		...normalizedIncomingTransactions.map((item) => item.id)
