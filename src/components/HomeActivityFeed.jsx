@@ -1,0 +1,42 @@
+import React from 'react';
+import {Box, Text} from 'ink';
+
+function ActivityItem({item}) {
+	return (
+		<Box
+			flexDirection="column"
+			borderStyle="round"
+			borderColor="#2d345d"
+			backgroundColor="#171b2d"
+			paddingX={1}
+			paddingY={1}
+		>
+			<Text color="#58d7a3">● <Text color="#c5c8ff">{item.message}</Text></Text>
+			<Text color="#7f88ba">{item.relativeTime}</Text>
+		</Box>
+	);
+}
+
+export function HomeActivityFeed({activities, width = 44}) {
+	return (
+		<Box
+			width={width}
+			flexDirection="column"
+			borderStyle="round"
+			borderColor="#303864"
+			backgroundColor="#12162a"
+			paddingX={2}
+			paddingY={1}
+		>
+			<Text color="#c5c8ff">Activity</Text>
+			<Text color="#7f88ba">Recent updates from your workspace</Text>
+			<Text color="#27305a">{'-'.repeat(Math.max(18, width - 6))}</Text>
+			{activities.length === 0 && <Text color="#626b9b">No activity yet</Text>}
+			{activities.map((activity) => (
+				<Box key={activity.id} marginBottom={1}>
+					<ActivityItem item={activity} />
+				</Box>
+			))}
+		</Box>
+	);
+}

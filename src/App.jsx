@@ -7,6 +7,7 @@ import {AddTransactionsModal} from './components/AddTransactionsModal.jsx';
 import {DEFAULT_TIMEZONE, TABS} from './constants.js';
 import {BottomBar} from './components/BottomBar.jsx';
 import {Dashboard} from './components/Dashboard.jsx';
+import {HomeActivityFeed} from './components/HomeActivityFeed.jsx';
 import {HomeOverviewPanel} from './components/HomeOverviewPanel.jsx';
 import {Tabs} from './components/Tabs.jsx';
 import {
@@ -137,6 +138,7 @@ export function App() {
 	const [transactionPreview, setTransactionPreview] = useState(null);
 	const [isImportingTransactions, setIsImportingTransactions] = useState(false);
 	const [transactions, setTransactions] = useState([]);
+	const [userActivities, setUserActivities] = useState([]);
 	const uploadTargetTypes = useMemo(() => {
 		if (currentTab === 'Balances') {
 			return new Set(['BANK']);
@@ -196,6 +198,7 @@ export function App() {
 				setUser(bios.user);
 				setAccountRows((bios.accounts ?? bios.institutions ?? []).map(mapInstitutionToRow));
 				setTransactions(bios.transactions ?? []);
+				setUserActivities(bios.userActivity ?? []);
 				setBootState('ready');
 			} catch (error) {
 				if (!mounted) {
@@ -263,6 +266,15 @@ export function App() {
 						setAddInstitutionNameInput('');
 						setAddInstitutionTypeInput('');
 						setAddInstitutionStep('name');
+						setUserActivities((prev) => [
+							{
+								id: crypto.randomUUID(),
+								user_id: user.id,
+								datetime: new Date().toISOString(),
+								message: 'New Deposit Account Added'
+							},
+							...prev
+						]);
 					})
 					.catch((error) => {
 						setCommandMessage(`Failed to create institution: ${error.message}`);
@@ -338,6 +350,15 @@ export function App() {
 						setCreditInstitutionNameInput('');
 						setCreditLastFourInput('');
 						setCreditAccountStep('institution');
+						setUserActivities((prev) => [
+							{
+								id: crypto.randomUUID(),
+								user_id: user.id,
+								datetime: new Date().toISOString(),
+								message: 'New Credit Card Added'
+							},
+							...prev
+						]);
 					})
 					.catch((error) => {
 						setCommandMessage(`Failed to create credit account: ${error.message}`);
@@ -557,6 +578,7 @@ export function App() {
 							setUser(null);
 							setAccountRows([]);
 							setTransactions([]);
+							setUserActivities([]);
 							setNameInput('');
 							setTimezoneInput(DEFAULT_TIMEZONE);
 							setBootState('wizard_name');
@@ -647,6 +669,7 @@ export function App() {
 						setUser(savedUser);
 						setAccountRows([]);
 						setTransactions([]);
+						setUserActivities([]);
 						setBootState('ready');
 					})
 					.catch((error) => {
@@ -674,6 +697,15 @@ export function App() {
 		const totalAccounts = currentUserRows.length;
 		const userTransactions = transactions.filter((item) => item.user_id === user?.id);
 		const totalTransactions = userTransactions.length;
+		const feedItems = userActivities
+			.filter((item) => item.user_id === user?.id)
+			.sort((a, b) => String(b.datetime).localeCompare(String(a.datetime)))
+			.slice(0, 6)
+			.map((item) => ({
+				id: item.id,
+				message: item.message,
+				relativeTime: formatLastUpdated(item.datetime)
+			}));
 		const latestAccountUpdatedAt = currentUserRows
 			.map((row) => row.updatedAt)
 			.filter(Boolean)
@@ -791,7 +823,7 @@ export function App() {
 		}
 
 		return (
-			<Box width="100%" justifyContent="center" alignItems="center">
+			<Box width="100%" paddingX={2} flexDirection="row" justifyContent="center">
 				<HomeOverviewPanel
 					userName={user?.name ?? 'there'}
 					totalAccounts={totalAccounts}
@@ -800,9 +832,11 @@ export function App() {
 					totalTransactions={totalTransactions}
 					lastActivity={lastActivity}
 				/>
+				<Box width={1} />
+				<HomeActivityFeed activities={feedItems} />
 			</Box>
 		);
-	}, [bootState, currentTab, errorMessage, accountRows, nameInput, terminalHeight, terminalWidth, timezoneInput, transactions, user]);
+	}, [bootState, currentTab, errorMessage, accountRows, nameInput, terminalHeight, terminalWidth, timezoneInput, transactions, user, userActivities]);
 
 	return (
 		<Box
