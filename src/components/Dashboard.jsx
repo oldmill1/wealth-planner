@@ -204,6 +204,7 @@ export function Dashboard({
 	terminalHeight,
 	accountRows,
 	transactionRows = [],
+	transactionsSectionTitle = 'RECENT TRANSACTIONS',
 	searchLabel = 'institution:all',
 	summaryLabel = 'Institutions',
 	hasBalances = false,
@@ -239,7 +240,7 @@ export function Dashboard({
 					<InstitutionRow key={item.id} item={item} isSelected={index === 0} leftPaneWidth={leftPaneWidth} />
 				))}
 				<Text color="#2f3a67">{'-'.repeat(Math.max(30, leftPaneWidth - 4))}</Text>
-				<Text backgroundColor="#1f2f56" color="#9db5e9">  RECENT TRANSACTIONS  </Text>
+				<Text backgroundColor="#1f2f56" color="#9db5e9">  {transactionsSectionTitle}  </Text>
 				<Text color="#2f3a67">{'-'.repeat(Math.max(30, leftPaneWidth - 4))}</Text>
 				{visibleTransactionRows.length === 0 && (
 					<Text color="#6f7396"> No transactions yet</Text>

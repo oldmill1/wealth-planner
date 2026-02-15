@@ -42,6 +42,12 @@ export const DEFAULT_COMMAND_REGISTRY = {
 		},
 		upload_csv: {
 			description: 'Import transactions from a CSV file into an account.'
+		},
+		search: {
+			description: 'Search transactions in the current tab by category path.'
+		},
+		clear: {
+			description: 'Clear the active transaction search filter.'
 		}
 	}
 };

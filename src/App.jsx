@@ -20,6 +20,7 @@ import {
 } from './services/database.js';
 import {categorizeTransactionsInBatches} from './services/ai/categorizeTransactions.js';
 import {executeCommand, loadOrInitCommandRegistry} from './services/commands.js';
+import {transactionRepository} from './services/data/index.js';
 
 function mapInstitutionToRow(institution) {
 	const updatedAt = institution.updated_at ?? null;
@@ -81,9 +82,59 @@ function withEmptyInstitutionRow(rows, placeholderLabel = 'Add First Deposit Acc
 
 const TAB_COMMANDS = {
 	Home: ['clean_db'],
-	Balances: ['add_deposit_account', 'upload_csv'],
-	Credit: ['add_credit_account', 'upload_csv']
+	Balances: ['add_deposit_account', 'upload_csv', 'search', 'clear'],
+	Credit: ['add_credit_account', 'upload_csv', 'search', 'clear']
 };
+
+function getCommandNameFromInput(rawInput) {
+	const raw = String(rawInput ?? '').trim().replace(/^\/+/, '');
+	if (!raw) {
+		return '';
+	}
+	return raw.split(/\s+/, 1)[0] ?? '';
+}
+
+function parseCommandInput(rawInput) {
+	const raw = String(rawInput ?? '').trim().replace(/^\/+/, '');
+	if (!raw) {
+		return {commandName: '', argsRaw: ''};
+	}
+	const firstWhitespace = raw.search(/\s/);
+	if (firstWhitespace === -1) {
+		return {commandName: raw, argsRaw: ''};
+	}
+	return {
+		commandName: raw.slice(0, firstWhitespace).trim(),
+		argsRaw: raw.slice(firstWhitespace + 1).trim()
+	};
+}
+
+function parseSearchQuery(argsRaw) {
+	const trimmed = String(argsRaw ?? '').trim();
+	if (!trimmed) {
+		return '';
+	}
+	if (trimmed.length >= 2) {
+		const first = trimmed[0];
+		const last = trimmed[trimmed.length - 1];
+		if ((first === '"' && last === '"') || (first === '\'' && last === '\'')) {
+			return trimmed.slice(1, -1).trim();
+		}
+	}
+	return trimmed;
+}
+
+function getInstitutionIdsForTab(currentUserRows, tab) {
+	if (tab === 'Balances') {
+		return currentUserRows.filter((row) => row.type === 'BANK').map((row) => row.id);
+	}
+	if (tab === 'Credit') {
+		return currentUserRows
+			.filter((row) => row.type === 'CREDIT' || row.type === 'CREDIT_CARD')
+			.map((row) => row.id);
+	}
+	return [];
+}
 
 function fuzzyMatch(query, value) {
 	if (!query) {
@@ -208,6 +259,7 @@ export function App() {
 	const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0);
 	const [commandMessage, setCommandMessage] = useState('');
 	const [isRunningCommand, setIsRunningCommand] = useState(false);
+	const [activeTransactionFilter, setActiveTransactionFilter] = useState(null);
 	const [currentTab, setCurrentTab] = useState('Home');
 	const [accountRows, setAccountRows] = useState([]);
 	const [isAddInstitutionModalOpen, setIsAddInstitutionModalOpen] = useState(false);
@@ -249,10 +301,13 @@ export function App() {
 		const tabCommands = TAB_COMMANDS[currentTab] ?? [];
 		return tabCommands.filter((command) => Object.hasOwn(commands, command));
 	}, [commands, currentTab]);
+	const commandNameInput = useMemo(
+		() => getCommandNameFromInput(commandInput),
+		[commandInput]
+	);
 	const commandSuggestions = useMemo(() => {
-		const normalized = commandInput.trim().replace(/^\/+/, '');
-		return availableCommands.filter((command) => fuzzyMatch(normalized, command));
-	}, [availableCommands, commandInput]);
+		return availableCommands.filter((command) => fuzzyMatch(commandNameInput, command));
+	}, [availableCommands, commandNameInput]);
 	const selectedSuggestion = commandSuggestions[selectedSuggestionIndex] ?? commandSuggestions[0] ?? null;
 
 	useEffect(() => {
@@ -639,22 +694,21 @@ export function App() {
 			}
 
 			if (key.return) {
-				const normalizedCommand = commandInput.trim().replace(/^\/+/, '');
-				if (!normalizedCommand) {
-					if (selectedSuggestion) {
-						setCommandInput(selectedSuggestion);
-					}
+				const {commandName, argsRaw} = parseCommandInput(commandInput);
+				if (!commandName && selectedSuggestion) {
+					setCommandInput(selectedSuggestion);
+					return;
 				}
 
 				let commandToRun = null;
-				if (availableCommands.includes(normalizedCommand)) {
-					commandToRun = normalizedCommand;
+				if (availableCommands.includes(commandName)) {
+					commandToRun = commandName;
 				} else if (selectedSuggestion) {
 					commandToRun = selectedSuggestion;
 				}
 
 				if (!commandToRun) {
-					setCommandMessage(`No command match for "/${normalizedCommand}" in ${currentTab}.`);
+					setCommandMessage(`No command match for "/${commandName}" in ${currentTab}.`);
 					return;
 				}
 
@@ -700,6 +754,49 @@ export function App() {
 					return;
 				}
 
+				if (commandToRun === 'search') {
+					const query = parseSearchQuery(argsRaw);
+					if (!query) {
+						setCommandMessage('Please provide a search query. Example: /search "restaurants"');
+						return;
+					}
+
+					const currentUserRows = accountRows.filter((row) => row.userId === user?.id);
+					const institutionIds = getInstitutionIdsForTab(currentUserRows, currentTab);
+					const matchedTransactions = transactionRepository.findTransactionsByCategorySearch({
+						userId: user?.id,
+						institutionIds,
+						query,
+						sort: 'posted_at_desc',
+						transactions
+					});
+					setActiveTransactionFilter({
+						type: 'category_search',
+						query,
+						header: 'SEARCH RESULTS'
+					});
+					setCommandMessage(
+						`Search results: ${matchedTransactions.length} transaction${matchedTransactions.length === 1 ? '' : 's'} for "${query}".`
+					);
+					setCommandMode(false);
+					setCommandInput('');
+					setSelectedSuggestionIndex(0);
+					return;
+				}
+
+				if (commandToRun === 'clear') {
+					if (!activeTransactionFilter) {
+						setCommandMessage('No active search filter.');
+					} else {
+						setActiveTransactionFilter(null);
+						setCommandMessage('Search filter cleared.');
+					}
+					setCommandMode(false);
+					setCommandInput('');
+					setSelectedSuggestionIndex(0);
+					return;
+				}
+
 				setIsRunningCommand(true);
 				executeCommand(commandToRun)
 					.then((message) => {
@@ -710,6 +807,7 @@ export function App() {
 							setTransactions([]);
 							setCategories([]);
 							setUserActivities([]);
+							setActiveTransactionFilter(null);
 							setNameInput('');
 							setTimezoneInput(DEFAULT_TIMEZONE);
 							setBootState('wizard_name');
@@ -894,10 +992,25 @@ export function App() {
 
 		if (bootState === 'ready' && currentTab === 'Balances') {
 			const institutionOnlyRows = currentUserRows.filter((row) => row.type === 'BANK');
-			const balanceAccountIds = new Set(institutionOnlyRows.map((row) => row.id));
-			const balanceTransactions = transactions
-				.filter((item) => item.user_id === user?.id && balanceAccountIds.has(item.institution_id))
-				.sort((a, b) => String(b.posted_at).localeCompare(String(a.posted_at)));
+			const balanceInstitutionIds = institutionOnlyRows.map((row) => row.id);
+			const balanceTransactions = transactionRepository.findTransactionsByUserAndInstitutions({
+				userId: user?.id,
+				institutionIds: balanceInstitutionIds,
+				sort: 'posted_at_desc',
+				transactions
+			});
+			const displayTransactions = activeTransactionFilter?.type === 'category_search'
+				? transactionRepository.findTransactionsByCategorySearch({
+					userId: user?.id,
+					institutionIds: balanceInstitutionIds,
+					query: activeTransactionFilter.query,
+					sort: 'posted_at_desc',
+					transactions
+				})
+				: balanceTransactions;
+			const transactionsSectionTitle = activeTransactionFilter?.type === 'category_search'
+				? activeTransactionFilter.header
+				: 'RECENT TRANSACTIONS';
 			const cashFlow30d = computeCashFlowSummary({
 				transactions: balanceTransactions,
 				timezone: user?.timezone,
@@ -917,7 +1030,8 @@ export function App() {
 							terminalWidth={terminalWidth}
 							terminalHeight={terminalHeight}
 							accountRows={tableRows}
-							transactionRows={balanceTransactions}
+							transactionRows={displayTransactions}
+							transactionsSectionTitle={transactionsSectionTitle}
 							searchLabel="institution:all"
 							summaryLabel="Balances"
 							hasBalances={hasBalances}
@@ -931,10 +1045,25 @@ export function App() {
 
 		if (bootState === 'ready' && currentTab === 'Credit') {
 			const creditCardRows = currentUserRows.filter((row) => row.type === 'CREDIT' || row.type === 'CREDIT_CARD');
-			const creditAccountIds = new Set(creditCardRows.map((row) => row.id));
-			const creditTransactions = transactions
-				.filter((item) => item.user_id === user?.id && creditAccountIds.has(item.institution_id))
-				.sort((a, b) => String(b.posted_at).localeCompare(String(a.posted_at)));
+			const creditInstitutionIds = creditCardRows.map((row) => row.id);
+			const creditTransactions = transactionRepository.findTransactionsByUserAndInstitutions({
+				userId: user?.id,
+				institutionIds: creditInstitutionIds,
+				sort: 'posted_at_desc',
+				transactions
+			});
+			const displayTransactions = activeTransactionFilter?.type === 'category_search'
+				? transactionRepository.findTransactionsByCategorySearch({
+					userId: user?.id,
+					institutionIds: creditInstitutionIds,
+					query: activeTransactionFilter.query,
+					sort: 'posted_at_desc',
+					transactions
+				})
+				: creditTransactions;
+			const transactionsSectionTitle = activeTransactionFilter?.type === 'category_search'
+				? activeTransactionFilter.header
+				: 'RECENT TRANSACTIONS';
 			const tableRows = withEmptyInstitutionRow(
 				creditCardRows,
 				'Add First Credit Card',
@@ -949,7 +1078,8 @@ export function App() {
 							terminalWidth={terminalWidth}
 							terminalHeight={terminalHeight}
 							accountRows={tableRows}
-							transactionRows={creditTransactions}
+							transactionRows={displayTransactions}
+							transactionsSectionTitle={transactionsSectionTitle}
 							searchLabel="credit_card:all"
 							summaryLabel="Credit Cards"
 							hasBalances={hasBalances}
@@ -974,7 +1104,7 @@ export function App() {
 				<HomeActivityFeed activities={feedItems} />
 			</Box>
 		);
-	}, [bootState, currentTab, errorMessage, accountRows, nameInput, terminalHeight, terminalWidth, timezoneInput, transactions, user, userActivities]);
+	}, [activeTransactionFilter, bootState, currentTab, errorMessage, accountRows, nameInput, terminalHeight, terminalWidth, timezoneInput, transactions, user, userActivities]);
 
 	return (
 		<Box

@@ -56,6 +56,16 @@ function normalizeCommandRegistryShape(parsed) {
 		changed = true;
 	}
 
+	if (!normalized.commands.search || typeof normalized.commands.search !== 'object') {
+		normalized.commands.search = {...DEFAULT_COMMAND_REGISTRY.commands.search};
+		changed = true;
+	}
+
+	if (!normalized.commands.clear || typeof normalized.commands.clear !== 'object') {
+		normalized.commands.clear = {...DEFAULT_COMMAND_REGISTRY.commands.clear};
+		changed = true;
+	}
+
 	if (Object.hasOwn(normalized.commands, 'add_institutions')) {
 		delete normalized.commands.add_institutions;
 		changed = true;
