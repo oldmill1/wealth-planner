@@ -118,6 +118,79 @@ function mergeCategories(existingCategories, incomingCategories) {
 	return [...byId.values()];
 }
 
+function getDatePartsForTimezone(date, timezone) {
+	const formatter = new Intl.DateTimeFormat('en-US', {
+		timeZone: timezone || DEFAULT_TIMEZONE,
+		year: 'numeric',
+		month: '2-digit',
+		day: '2-digit'
+	});
+	const parts = formatter.formatToParts(date);
+	const year = Number(parts.find((part) => part.type === 'year')?.value);
+	const month = Number(parts.find((part) => part.type === 'month')?.value);
+	const day = Number(parts.find((part) => part.type === 'day')?.value);
+	return {year, month, day};
+}
+
+function datePartsToKey({year, month, day}) {
+	return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+function shiftDateKeyByDays(dateKey, daysDelta) {
+	const [year, month, day] = String(dateKey).split('-').map((value) => Number(value));
+	if (!year || !month || !day) {
+		return dateKey;
+	}
+	const utcDate = new Date(Date.UTC(year, month - 1, day));
+	utcDate.setUTCDate(utcDate.getUTCDate() + daysDelta);
+	return utcDate.toISOString().slice(0, 10);
+}
+
+function computeCashFlowSummary({transactions, timezone, days = 30}) {
+	if (!Array.isArray(transactions) || transactions.length === 0) {
+		const end = datePartsToKey(getDatePartsForTimezone(new Date(), timezone));
+		const start = shiftDateKeyByDays(end, -(days - 1));
+		return {
+			startDate: start,
+			endDate: end,
+			inflowCents: 0,
+			outflowCents: 0,
+			netCents: 0,
+			transactionCount: 0
+		};
+	}
+
+	const endDate = datePartsToKey(getDatePartsForTimezone(new Date(), timezone));
+	const startDate = shiftDateKeyByDays(endDate, -(days - 1));
+	let inflowCents = 0;
+	let outflowCents = 0;
+	let transactionCount = 0;
+
+	for (const transaction of transactions) {
+		const postedAt = String(transaction?.posted_at ?? '').trim();
+		if (!postedAt || postedAt < startDate || postedAt > endDate) {
+			continue;
+		}
+
+		const amountCents = Number(transaction.amount_cents) || 0;
+		if (amountCents > 0) {
+			inflowCents += amountCents;
+		} else if (amountCents < 0) {
+			outflowCents += Math.abs(amountCents);
+		}
+		transactionCount += 1;
+	}
+
+	return {
+		startDate,
+		endDate,
+		inflowCents,
+		outflowCents,
+		netCents: inflowCents - outflowCents,
+		transactionCount
+	};
+}
+
 export function App() {
 	const {exit} = useApp();
 	const {stdout} = useStdout();
@@ -825,6 +898,11 @@ export function App() {
 			const balanceTransactions = transactions
 				.filter((item) => item.user_id === user?.id && balanceAccountIds.has(item.institution_id))
 				.sort((a, b) => String(b.posted_at).localeCompare(String(a.posted_at)));
+			const cashFlow30d = computeCashFlowSummary({
+				transactions: balanceTransactions,
+				timezone: user?.timezone,
+				days: 30
+			});
 			const tableRows = withEmptyInstitutionRow(
 				institutionOnlyRows,
 				'Add First Deposit Account',
@@ -844,6 +922,7 @@ export function App() {
 							summaryLabel="Balances"
 							hasBalances={hasBalances}
 							hasCredits={hasCredits}
+							cashFlow30d={cashFlow30d}
 						/>
 					</Box>
 				</>

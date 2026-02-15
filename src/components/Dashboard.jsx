@@ -158,6 +158,24 @@ function formatAmount(amountCents) {
 	return `${sign}$${absolute}`;
 }
 
+function formatCurrency(amountCents) {
+	return `$${(Math.abs(Number(amountCents) || 0) / 100).toFixed(2)}`;
+}
+
+function formatDateShort(isoDate) {
+	if (!isoDate) {
+		return '--';
+	}
+	const parsed = new Date(`${isoDate}T00:00:00`);
+	if (Number.isNaN(parsed.getTime())) {
+		return String(isoDate);
+	}
+	return parsed.toLocaleDateString('en-US', {
+		month: '2-digit',
+		day: '2-digit'
+	});
+}
+
 function formatPostedDateHuman(postedAtRaw) {
 	const postedAt = String(postedAtRaw ?? '').trim();
 	const parsed = new Date(`${postedAt}T00:00:00`);
@@ -189,7 +207,8 @@ export function Dashboard({
 	searchLabel = 'institution:all',
 	summaryLabel = 'Institutions',
 	hasBalances = false,
-	hasCredits = false
+	hasCredits = false,
+	cashFlow30d = null
 }) {
 	const leftPaneWidth = Math.max(56, Math.floor(terminalWidth * 0.62));
 	const rightPaneWidth = Math.max(28, terminalWidth - leftPaneWidth - 6);
@@ -210,7 +229,7 @@ export function Dashboard({
 	return (
 		<Box width="100%" paddingX={1} paddingY={1} flexDirection="row">
 			<Box width={leftPaneWidth} flexDirection="column" paddingX={1}>
-				<Text backgroundColor="#1d2a4d" color="#d4dcff">  {summaryLabel.toUpperCase()} DASHBOARD  </Text>
+				<Text color="#d4dcff">My {summaryLabel}</Text>
 				<Text color="#2f3a67">{'='.repeat(Math.max(30, leftPaneWidth - 4))}</Text>
 				<Box width="100%" paddingX={1}>
 					<Text color="#aeb2df">{tableHeader}</Text>
@@ -263,6 +282,30 @@ export function Dashboard({
 						<Text backgroundColor="#1f2f56" color="#9db5e9">  Synced  </Text>
 					</Box>
 				</Box>
+				{cashFlow30d && (
+					<Box
+						marginTop={1}
+						width={checklistWidth}
+						flexDirection="column"
+						borderStyle="round"
+						borderColor="#33406f"
+						backgroundColor="#151a30"
+						paddingX={2}
+						paddingY={1}
+					>
+						<Text color="#8f98c8">Cash Flow (30D)</Text>
+						<Text color="#27305a">{'-'.repeat(Math.max(14, checklistWidth - 6))}</Text>
+						<Text color="#7f89be">
+							{formatDateShort(cashFlow30d.startDate)} - {formatDateShort(cashFlow30d.endDate)}
+						</Text>
+						<Text color="#9ad4b6">In:  {formatCurrency(cashFlow30d.inflowCents)}</Text>
+						<Text color="#b6bddf">Out: {formatCurrency(cashFlow30d.outflowCents)}</Text>
+						<Text color={cashFlow30d.netCents >= 0 ? '#7ce0b0' : '#e39090'}>
+							Net: {cashFlow30d.netCents >= 0 ? '+' : '-'}{formatCurrency(cashFlow30d.netCents)}
+						</Text>
+						<Text color="#6f7396">Txns: {cashFlow30d.transactionCount}</Text>
+					</Box>
+				)}
 			</Box>
 		</Box>
 	);
