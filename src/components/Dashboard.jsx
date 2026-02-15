@@ -239,9 +239,13 @@ export function Dashboard({
 	focusedTransactionIndex = 0,
 	searchLabel = 'institution:all',
 	summaryLabel = 'Institutions',
-	cashFlow30d = null
+	cashFlow30d = null,
+	leftPaneRatio = 0.62
 }) {
-		const leftPaneWidth = Math.max(56, Math.floor(terminalWidth * 0.62));
+		const normalizedLeftPaneRatio = Number.isFinite(Number(leftPaneRatio))
+			? Math.min(1, Math.max(0.5, Number(leftPaneRatio)))
+			: 0.62;
+		const leftPaneWidth = Math.max(56, Math.floor(terminalWidth * normalizedLeftPaneRatio));
 		const safeTableWidth = Math.max(56, leftPaneWidth - 8);
 	const estimatedAvailableLines = Math.max(12, terminalHeight - 12);
 	const fixedLeftPaneLines = 8;

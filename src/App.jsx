@@ -1371,8 +1371,22 @@ export function App() {
 		const totalAccounts = currentUserRows.length;
 		const userTransactions = transactions.filter((item) => item.user_id === user?.id);
 		const totalTransactions = userTransactions.length;
-		const feedItems = userActivities
+		const tabInstitutionIds = new Set(
+			(activeTabTransactionState?.tableRows ?? [])
+				.filter((row) => !row.isPlaceholder)
+				.map((row) => row.id)
+				.filter(Boolean)
+		);
+		const scopedActivities = userActivities
 			.filter((item) => item.user_id === user?.id)
+			.filter((item) => {
+				if (currentTab !== 'Balances' && currentTab !== 'Credit') {
+					return true;
+				}
+				const institutionId = String(item?.metadata?.institution_id ?? '').trim();
+				return institutionId ? tabInstitutionIds.has(institutionId) : false;
+			});
+		const feedItems = scopedActivities
 			.sort((a, b) => String(b.datetime).localeCompare(String(a.datetime)))
 			.slice(0, 6)
 			.map((item) => ({
@@ -1439,27 +1453,40 @@ export function App() {
 			if (!tableState) {
 				return null;
 			}
+			const availableWidth = Math.max(81, terminalWidth - 4);
+			const panelGap = 1;
+			let sidebarWidth = Math.max(24, Math.floor(availableWidth * 0.3));
+			const maxSidebarWidth = Math.max(24, availableWidth - 56 - panelGap);
+			if (sidebarWidth > maxSidebarWidth) {
+				sidebarWidth = maxSidebarWidth;
+			}
+			const contentWidth = Math.max(56, availableWidth - sidebarWidth - panelGap);
 
 			return (
 				<>
 					<Text color="#777898"> </Text>
-					<Box width="100%" flexDirection="column">
-						<Dashboard
-							terminalWidth={terminalWidth}
-							terminalHeight={terminalHeight}
-							accountRows={tableState.tableRows}
-							transactionRows={tableState.displayTransactions}
-							visibleTransactionRows={transactionFocusContext.visibleTransactionRows}
-							transactionsSectionTitle={tableState.transactionsSectionTitle}
-							showRemainingTransactions={showRemainingTransactions}
-							isTransactionFocusMode={isTransactionFocusMode}
-							focusedTransactionIndex={focusedTransactionIndex}
-							searchLabel={tableState.searchLabel}
-							summaryLabel={tableState.summaryLabel}
-							hasBalances={hasBalances}
-							hasCredits={hasCredits}
-							cashFlow30d={tableState.cashFlow30d}
-						/>
+					<Box width="100%" paddingX={2} flexDirection="row">
+						<Box width={contentWidth}>
+							<Dashboard
+								terminalWidth={contentWidth}
+								terminalHeight={terminalHeight}
+								accountRows={tableState.tableRows}
+								transactionRows={tableState.displayTransactions}
+								visibleTransactionRows={transactionFocusContext.visibleTransactionRows}
+								transactionsSectionTitle={tableState.transactionsSectionTitle}
+								showRemainingTransactions={showRemainingTransactions}
+								isTransactionFocusMode={isTransactionFocusMode}
+								focusedTransactionIndex={focusedTransactionIndex}
+								searchLabel={tableState.searchLabel}
+								summaryLabel={tableState.summaryLabel}
+								hasBalances={hasBalances}
+								hasCredits={hasCredits}
+								cashFlow30d={tableState.cashFlow30d}
+								leftPaneRatio={1}
+							/>
+						</Box>
+						<Box width={1} />
+						<HomeActivityFeed activities={feedItems} width={sidebarWidth} />
 					</Box>
 				</>
 			);
@@ -1470,26 +1497,39 @@ export function App() {
 			if (!tableState) {
 				return null;
 			}
+			const availableWidth = Math.max(81, terminalWidth - 4);
+			const panelGap = 1;
+			let sidebarWidth = Math.max(24, Math.floor(availableWidth * 0.3));
+			const maxSidebarWidth = Math.max(24, availableWidth - 56 - panelGap);
+			if (sidebarWidth > maxSidebarWidth) {
+				sidebarWidth = maxSidebarWidth;
+			}
+			const contentWidth = Math.max(56, availableWidth - sidebarWidth - panelGap);
 
 			return (
 				<>
 					<Text color="#777898"> </Text>
-					<Box width="100%" flexDirection="column">
-						<Dashboard
-							terminalWidth={terminalWidth}
-							terminalHeight={terminalHeight}
-							accountRows={tableState.tableRows}
-							transactionRows={tableState.displayTransactions}
-							visibleTransactionRows={transactionFocusContext.visibleTransactionRows}
-							transactionsSectionTitle={tableState.transactionsSectionTitle}
-							showRemainingTransactions={showRemainingTransactions}
-							isTransactionFocusMode={isTransactionFocusMode}
-							focusedTransactionIndex={focusedTransactionIndex}
-							searchLabel={tableState.searchLabel}
-							summaryLabel={tableState.summaryLabel}
-							hasBalances={hasBalances}
-							hasCredits={hasCredits}
-						/>
+					<Box width="100%" paddingX={2} flexDirection="row">
+						<Box width={contentWidth}>
+							<Dashboard
+								terminalWidth={contentWidth}
+								terminalHeight={terminalHeight}
+								accountRows={tableState.tableRows}
+								transactionRows={tableState.displayTransactions}
+								visibleTransactionRows={transactionFocusContext.visibleTransactionRows}
+								transactionsSectionTitle={tableState.transactionsSectionTitle}
+								showRemainingTransactions={showRemainingTransactions}
+								isTransactionFocusMode={isTransactionFocusMode}
+								focusedTransactionIndex={focusedTransactionIndex}
+								searchLabel={tableState.searchLabel}
+								summaryLabel={tableState.summaryLabel}
+								hasBalances={hasBalances}
+								hasCredits={hasCredits}
+								leftPaneRatio={1}
+							/>
+						</Box>
+						<Box width={1} />
+						<HomeActivityFeed activities={feedItems} width={sidebarWidth} />
 					</Box>
 				</>
 			);
