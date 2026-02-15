@@ -293,7 +293,7 @@ export function Dashboard({
 						paddingX={2}
 						paddingY={1}
 					>
-						<Text color="#8f98c8">Cash Flow (30D)</Text>
+						<Text color="#8f98c8">Cash Flow</Text>
 						<Text color="#27305a">{'-'.repeat(Math.max(14, checklistWidth - 6))}</Text>
 						<Text color="#7f89be">
 							{formatDateShort(cashFlow30d.startDate)} - {formatDateShort(cashFlow30d.endDate)}
@@ -303,7 +303,6 @@ export function Dashboard({
 						<Text color={cashFlow30d.netCents >= 0 ? '#7ce0b0' : '#e39090'}>
 							Net: {cashFlow30d.netCents >= 0 ? '+' : '-'}{formatCurrency(cashFlow30d.netCents)}
 						</Text>
-						<Text color="#6f7396">Txns: {cashFlow30d.transactionCount}</Text>
 					</Box>
 				)}
 			</Box>
