@@ -1053,11 +1053,7 @@ export function App() {
 				if (isTransactionFocusMode) {
 					setFocusedTransactionIndex(0);
 				}
-				setShowRemainingTransactions((prev) => {
-					const next = !prev;
-					setCommandMessage(next ? 'Showing more results.' : 'Showing first results.');
-					return next;
-				});
+				setShowRemainingTransactions((prev) => !prev);
 				return;
 			}
 			if (input === 'q') {
