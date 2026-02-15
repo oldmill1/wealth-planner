@@ -85,6 +85,7 @@ const TAB_COMMANDS = {
 	Balances: ['add_deposit_account', 'upload_csv', 'search', 'clear'],
 	Credit: ['add_credit_account', 'upload_csv', 'search', 'clear']
 };
+const RECENT_TRANSACTIONS_LIMIT = 20;
 
 function getCommandNameFromInput(rawInput) {
 	const raw = String(rawInput ?? '').trim().replace(/^\/+/, '');
@@ -134,6 +135,17 @@ function getInstitutionIdsForTab(currentUserRows, tab) {
 			.map((row) => row.id);
 	}
 	return [];
+}
+
+function isSpaceKeypress(input, key) {
+	if (key?.space === true || key?.name === 'space') {
+		return true;
+	}
+	const text = String(input ?? '');
+	if (!text) {
+		return false;
+	}
+	return text.codePointAt(0) === 32;
 }
 
 function fuzzyMatch(query, value) {
@@ -260,6 +272,7 @@ export function App() {
 	const [commandMessage, setCommandMessage] = useState('');
 	const [isRunningCommand, setIsRunningCommand] = useState(false);
 	const [activeTransactionFilter, setActiveTransactionFilter] = useState(null);
+	const [showRemainingTransactions, setShowRemainingTransactions] = useState(false);
 	const [currentTab, setCurrentTab] = useState('Home');
 	const [accountRows, setAccountRows] = useState([]);
 	const [isAddInstitutionModalOpen, setIsAddInstitutionModalOpen] = useState(false);
@@ -322,6 +335,10 @@ export function App() {
 			return Math.min(prev, transactionInstitutionRows.length - 1);
 		});
 	}, [transactionInstitutionRows.length]);
+
+	useEffect(() => {
+		setShowRemainingTransactions(false);
+	}, [currentTab, activeTransactionFilter, transactions.length, terminalHeight]);
 
 	useEffect(() => {
 		let mounted = true;
@@ -856,6 +873,14 @@ export function App() {
 		}
 
 		if (bootState === 'ready') {
+			if (isSpaceKeypress(input, key) && (currentTab === 'Balances' || currentTab === 'Credit')) {
+				setShowRemainingTransactions((prev) => {
+					const next = !prev;
+					setCommandMessage(next ? 'Showing more results.' : 'Showing first results.');
+					return next;
+				});
+				return;
+			}
 			if (input === 'q') {
 				exit();
 			}
@@ -999,6 +1024,7 @@ export function App() {
 				sort: 'posted_at_desc',
 				transactions
 			});
+			const recentBalanceTransactions = balanceTransactions.slice(0, RECENT_TRANSACTIONS_LIMIT);
 			const displayTransactions = activeTransactionFilter?.type === 'category_search'
 				? transactionRepository.findTransactionsByCategorySearch({
 					userId: user?.id,
@@ -1007,7 +1033,7 @@ export function App() {
 					sort: 'posted_at_desc',
 					transactions
 				})
-				: balanceTransactions;
+				: recentBalanceTransactions;
 			const transactionsSectionTitle = activeTransactionFilter?.type === 'category_search'
 				? activeTransactionFilter.header
 				: 'RECENT TRANSACTIONS';
@@ -1032,6 +1058,7 @@ export function App() {
 							accountRows={tableRows}
 							transactionRows={displayTransactions}
 							transactionsSectionTitle={transactionsSectionTitle}
+							showRemainingTransactions={showRemainingTransactions}
 							searchLabel="institution:all"
 							summaryLabel="Balances"
 							hasBalances={hasBalances}
@@ -1052,6 +1079,7 @@ export function App() {
 				sort: 'posted_at_desc',
 				transactions
 			});
+			const recentCreditTransactions = creditTransactions.slice(0, RECENT_TRANSACTIONS_LIMIT);
 			const displayTransactions = activeTransactionFilter?.type === 'category_search'
 				? transactionRepository.findTransactionsByCategorySearch({
 					userId: user?.id,
@@ -1060,7 +1088,7 @@ export function App() {
 					sort: 'posted_at_desc',
 					transactions
 				})
-				: creditTransactions;
+				: recentCreditTransactions;
 			const transactionsSectionTitle = activeTransactionFilter?.type === 'category_search'
 				? activeTransactionFilter.header
 				: 'RECENT TRANSACTIONS';
@@ -1080,6 +1108,7 @@ export function App() {
 							accountRows={tableRows}
 							transactionRows={displayTransactions}
 							transactionsSectionTitle={transactionsSectionTitle}
+							showRemainingTransactions={showRemainingTransactions}
 							searchLabel="credit_card:all"
 							summaryLabel="Credit Cards"
 							hasBalances={hasBalances}
@@ -1104,7 +1133,7 @@ export function App() {
 				<HomeActivityFeed activities={feedItems} />
 			</Box>
 		);
-	}, [activeTransactionFilter, bootState, currentTab, errorMessage, accountRows, nameInput, terminalHeight, terminalWidth, timezoneInput, transactions, user, userActivities]);
+	}, [activeTransactionFilter, bootState, currentTab, errorMessage, accountRows, nameInput, showRemainingTransactions, terminalHeight, terminalWidth, timezoneInput, transactions, user, userActivities]);
 
 	return (
 		<Box

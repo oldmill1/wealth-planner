@@ -205,6 +205,7 @@ export function Dashboard({
 	accountRows,
 	transactionRows = [],
 	transactionsSectionTitle = 'RECENT TRANSACTIONS',
+	showRemainingTransactions = false,
 	searchLabel = 'institution:all',
 	summaryLabel = 'Institutions',
 	hasBalances = false,
@@ -221,7 +222,11 @@ export function Dashboard({
 	const accountLinesBudget = Math.max(1, estimatedAvailableLines - fixedLeftPaneLines - minTransactionLines);
 	const {rows: visibleAccountRows, usedLines: usedAccountLines} = selectAccountRowsForHeight(accountRows, accountLinesBudget);
 	const transactionLinesBudget = Math.max(1, estimatedAvailableLines - fixedLeftPaneLines - usedAccountLines);
-	const visibleTransactionRows = transactionRows.slice(0, transactionLinesBudget);
+	const hasOverflowTransactions = transactionRows.length > transactionLinesBudget;
+	const showingRemainder = showRemainingTransactions && hasOverflowTransactions;
+	const visibleTransactionRows = showingRemainder
+		? transactionRows.slice(transactionLinesBudget)
+		: transactionRows.slice(0, transactionLinesBudget);
 	const tableHeader = renderTableLine(
 		Object.fromEntries(COLUMNS.map((column) => [column.key, column.label])),
 		computeColumnWidths(safeTableWidth)
@@ -248,6 +253,12 @@ export function Dashboard({
 				{visibleTransactionRows.map((item) => (
 					<Text key={item.id} color="#95a0d1"> {formatTransactionLine(item, Math.max(30, leftPaneWidth - 6))}</Text>
 				))}
+				{hasOverflowTransactions && !showingRemainder && (
+					<Text color="#6f7396"> Press space for more results</Text>
+				)}
+				{hasOverflowTransactions && showingRemainder && (
+					<Text color="#6f7396"> No more results in this set</Text>
+				)}
 				<Text color="#6b74a8"> Source: ~/.config/wealth-planner/main.json</Text>
 			</Box>
 			<Box width={1}>
