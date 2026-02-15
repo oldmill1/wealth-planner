@@ -30,6 +30,22 @@ export function isValidInstitutionType(value) {
 }
 
 export function isValidInstitution(record) {
+	const aliases = record?.aliases;
+	const switchTokens = aliases?.switch_tokens;
+	const hasValidAliases = (
+		aliases === undefined ||
+		(
+			aliases !== null &&
+			typeof aliases === 'object' &&
+			(aliases.nickname === undefined || typeof aliases.nickname === 'string') &&
+			(aliases.last4 === undefined || typeof aliases.last4 === 'string') &&
+			(
+				switchTokens === undefined ||
+				(Array.isArray(switchTokens) && switchTokens.every((token) => typeof token === 'string'))
+			)
+		)
+	);
+
 	return (
 		record !== null &&
 		typeof record === 'object' &&
@@ -38,8 +54,32 @@ export function isValidInstitution(record) {
 		typeof record.name === 'string' &&
 		typeof record.user_id === 'string' &&
 		typeof record.created_at === 'string' &&
-		typeof record.updated_at === 'string'
+		typeof record.updated_at === 'string' &&
+		hasValidAliases
 	);
+}
+
+function normalizeInstitutionAliases(rawAliases) {
+	if (rawAliases === null || rawAliases === undefined) {
+		return {};
+	}
+	if (typeof rawAliases !== 'object') {
+		return {};
+	}
+
+	const nickname = String(rawAliases.nickname ?? '').trim();
+	const last4 = String(rawAliases.last4 ?? '').trim();
+	const switchTokens = Array.isArray(rawAliases.switch_tokens)
+		? rawAliases.switch_tokens
+			.map((token) => String(token ?? '').trim())
+			.filter(Boolean)
+		: [];
+
+	return {
+		...(nickname ? {nickname} : {}),
+		...(last4 ? {last4} : {}),
+		...(switchTokens.length > 0 ? {switch_tokens: switchTokens} : {})
+	};
 }
 
 function normalizeInstitution(record) {
@@ -53,8 +93,26 @@ function normalizeInstitution(record) {
 	if (Object.hasOwn(normalized, 'transaction_ids')) {
 		delete normalized.transaction_ids;
 	}
+	normalized.aliases = normalizeInstitutionAliases(normalized.aliases);
 
 	return isValidInstitution(normalized) ? normalized : null;
+}
+
+function normalizeInstitutionFilterByTab(rawValue) {
+	const source = rawValue && typeof rawValue === 'object' ? rawValue : {};
+	const balances = String(source.Balances ?? 'all').trim() || 'all';
+	const credit = String(source.Credit ?? 'all').trim() || 'all';
+	return {
+		Balances: balances,
+		Credit: credit
+	};
+}
+
+function normalizeUiState(rawUiState) {
+	const source = rawUiState && typeof rawUiState === 'object' ? rawUiState : {};
+	return {
+		institution_filter_by_tab: normalizeInstitutionFilterByTab(source.institution_filter_by_tab)
+	};
 }
 
 function normalizeUserActivity(record) {
@@ -225,9 +283,16 @@ function normalizeDatabaseShape(parsed) {
 		normalized.meta = {
 			version: 1,
 			created_at: now,
-			updated_at: now
+			updated_at: now,
+			ui_state: normalizeUiState({})
 		};
 		changed = true;
+	} else {
+		const normalizedUiState = normalizeUiState(normalized.meta.ui_state);
+		if (JSON.stringify(normalizedUiState) !== JSON.stringify(normalized.meta.ui_state ?? {})) {
+			normalized.meta.ui_state = normalizedUiState;
+			changed = true;
+		}
 	}
 
 	if (!Array.isArray(normalized.users)) {
@@ -315,7 +380,8 @@ function createDatabase(user) {
 		meta: {
 			version: 1,
 			created_at: now,
-			updated_at: now
+			updated_at: now,
+			ui_state: normalizeUiState({})
 		},
 		users: [user],
 		accounts: [],
@@ -324,32 +390,50 @@ function createDatabase(user) {
 	};
 }
 
+function syncAccountsToSqlite(accounts) {
+	return sqliteAdapter.replaceAccounts(accounts ?? []);
+}
+
 export async function loadOrInitDatabase() {
 	await sqliteAdapter.ensureReady();
 	try {
 		await fs.access(DB_PATH);
 		const raw = await fs.readFile(DB_PATH, 'utf8');
 		const parsed = JSON.parse(raw);
-		const {normalized, changed} = normalizeDatabaseShape(parsed);
-		if (changed) {
-			await fs.writeFile(DB_PATH, JSON.stringify(normalized, null, 2), 'utf8');
-		}
-		const sqliteData = await sqliteAdapter.loadDatabase();
-		const firstUser = normalized.users?.[0] ?? null;
-		return {
-			firstRun: false,
-			user: firstUser,
-			accounts: normalized.accounts ?? [],
-			categories: sqliteData.categories ?? [DEFAULT_CATEGORY],
-			transactions: sqliteData.transactions ?? [],
-			userActivity: normalized.user_activity ?? []
-		};
+			const {normalized, changed} = normalizeDatabaseShape(parsed);
+			if (changed) {
+				await fs.writeFile(DB_PATH, JSON.stringify(normalized, null, 2), 'utf8');
+			}
+			const accountSyncResult = syncAccountsToSqlite(normalized.accounts ?? []);
+			const sqliteData = await sqliteAdapter.loadDatabase();
+			const firstUser = normalized.users?.[0] ?? null;
+			return {
+				firstRun: false,
+				user: firstUser,
+				accounts: normalized.accounts ?? [],
+				categories: sqliteData.categories ?? [DEFAULT_CATEGORY],
+				transactions: sqliteData.transactions ?? [],
+				userActivity: normalized.user_activity ?? [],
+				uiState: normalizeUiState(normalized.meta?.ui_state),
+				warnings: {
+					skippedTransactions: Number(accountSyncResult?.skippedTransactions) || 0
+				}
+			};
 	} catch (error) {
 		if (error && error.code !== 'ENOENT') {
 			throw error;
 		}
-		return {firstRun: true, user: null, accounts: [], categories: [DEFAULT_CATEGORY], transactions: [], userActivity: []};
-	}
+			return {
+				firstRun: true,
+				user: null,
+				accounts: [],
+				categories: [DEFAULT_CATEGORY],
+				transactions: [],
+				userActivity: [],
+				uiState: normalizeUiState({}),
+				warnings: {skippedTransactions: 0}
+			};
+		}
 }
 
 export async function saveFirstUser(name, timezone) {
@@ -358,16 +442,21 @@ export async function saveFirstUser(name, timezone) {
 	const user = createRecord({name, timezone});
 	const database = createDatabase(user);
 	await fs.writeFile(DB_PATH, JSON.stringify(database, null, 2), 'utf8');
+	syncAccountsToSqlite([]);
 	return user;
 }
 
-export async function addInstitutionForUser({userId, name, type = 'BANK'}) {
+export async function addInstitutionForUser({userId, name, type = 'BANK', aliases = {}}) {
 	const trimmedName = name.trim();
 	if (!trimmedName) {
 		throw new Error('Institution name is required.');
 	}
 	if (!isValidInstitutionType(type)) {
 		throw new Error(`Invalid account type: ${type}`);
+	}
+	const normalizedAliases = normalizeInstitutionAliases(aliases);
+	if ((type === 'CREDIT' || type === 'CREDIT_CARD') && !String(normalizedAliases.last4 ?? '').trim()) {
+		throw new Error('Credit accounts require aliases.last4.');
 	}
 
 	const raw = await fs.readFile(DB_PATH, 'utf8');
@@ -380,6 +469,7 @@ export async function addInstitutionForUser({userId, name, type = 'BANK'}) {
 		user_id: userId,
 		type,
 		name: trimmedName,
+		aliases: normalizedAliases,
 		created_at: now,
 		updated_at: now
 	};
@@ -401,6 +491,7 @@ export async function addInstitutionForUser({userId, name, type = 'BANK'}) {
 	};
 
 	await fs.writeFile(DB_PATH, JSON.stringify(normalized, null, 2), 'utf8');
+	syncAccountsToSqlite(normalized.accounts);
 	return institution;
 }
 
@@ -480,6 +571,17 @@ function parseUsDateToIso(dateString) {
 	return `${yyyy.padStart(4, '0')}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`;
 }
 
+function parseCsvDateToIso(dateString) {
+	const trimmed = String(dateString ?? '').trim();
+	if (!trimmed) {
+		throw new Error(`Invalid date format: ${dateString}`);
+	}
+	if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+		return trimmed;
+	}
+	return parseUsDateToIso(trimmed);
+}
+
 const MONTH_BY_NAME = {
 	jan: '01',
 	feb: '02',
@@ -549,6 +651,17 @@ function isAmexCsvHeader(header) {
 		header[1] === 'date processed' &&
 		header[2] === 'description' &&
 		header[3] === 'amount';
+}
+
+function isCreditDebitCsvHeader(header) {
+	return header.length >= 7 &&
+		header[0] === 'transaction date' &&
+		header[1] === 'posted date' &&
+		header[2] === 'card no.' &&
+		header[3] === 'description' &&
+		header[4] === 'category' &&
+		header[5] === 'debit' &&
+		header[6] === 'credit';
 }
 
 function buildTransactionsFromDepositCsvRows({rows, userId, institutionId, sourceFileName}) {
@@ -633,6 +746,82 @@ function buildTransactionsFromAmexCsvRows({rows, userId, institutionId, sourceFi
 	return transactions;
 }
 
+function buildTransactionsFromCreditDebitCsvRows({rows, userId, institutionId, sourceFileName}) {
+	const now = new Date().toISOString();
+	const transactions = [];
+
+	for (const row of rows) {
+		const [
+			transactionDateRaw,
+			postedDateRaw,
+			_cardNoRaw,
+			descriptionRaw,
+			_categoryRaw,
+			debitRaw,
+			creditRaw
+		] = row;
+		const description = String(descriptionRaw ?? '').trim();
+		const debitText = String(debitRaw ?? '').trim();
+		const creditText = String(creditRaw ?? '').trim();
+		const hasDebit = debitText.length > 0;
+		const hasCredit = creditText.length > 0;
+
+		if (!description || (!hasDebit && !hasCredit)) {
+			continue;
+		}
+
+		const postedDateText = String(postedDateRaw ?? '').trim();
+		const transactionDateText = String(transactionDateRaw ?? '').trim();
+		const postedAt = postedDateText || transactionDateText;
+		if (!postedAt) {
+			continue;
+		}
+
+		let amountCents = 0;
+		let direction = 'DEBIT';
+		if (hasDebit && !hasCredit) {
+			amountCents = -Math.abs(toCents(debitText));
+			direction = 'DEBIT';
+		} else if (hasCredit && !hasDebit) {
+			amountCents = Math.abs(toCents(creditText));
+			direction = 'CREDIT';
+		} else {
+			const debitCents = Math.abs(toCents(debitText));
+			const creditCents = Math.abs(toCents(creditText));
+			if (debitCents >= creditCents) {
+				amountCents = -debitCents;
+				direction = 'DEBIT';
+			} else {
+				amountCents = creditCents;
+				direction = 'CREDIT';
+			}
+		}
+		if (amountCents === 0) {
+			continue;
+		}
+
+		transactions.push({
+			id: crypto.randomUUID(),
+			user_id: userId,
+			institution_id: institutionId,
+			posted_at: parseCsvDateToIso(postedAt),
+			description_raw: description,
+			amount_cents: amountCents,
+			category_path: DEFAULT_CATEGORY_PATH,
+			currency: 'CAD',
+			direction,
+			source: {
+				type: 'csv',
+				file_name: sourceFileName
+			},
+			created_at: now,
+			updated_at: now
+		});
+	}
+
+	return transactions;
+}
+
 export async function previewTransactionsCsvImport({userId, institutionId, csvPath}) {
 	const resolvedPath = resolveCsvPath(csvPath);
 	const csvContent = await fs.readFile(resolvedPath, 'utf8');
@@ -660,11 +849,19 @@ export async function previewTransactionsCsvImport({userId, institutionId, csvPa
 			institutionId,
 			sourceFileName: path.basename(resolvedPath)
 		});
+	} else if (isCreditDebitCsvHeader(header)) {
+		transactions = buildTransactionsFromCreditDebitCsvRows({
+			rows: dataRows,
+			userId,
+			institutionId,
+			sourceFileName: path.basename(resolvedPath)
+		});
 	} else {
 		throw new Error(
 			'Unexpected CSV header. Supported formats: ' +
 			'Date, Transaction Details, Funds Out, Funds In ' +
-			'or Date, Date Processed, Description, Amount'
+			'or Date, Date Processed, Description, Amount ' +
+			'or Transaction Date, Posted Date, Card No., Description, Category, Debit, Credit'
 		);
 	}
 
@@ -693,6 +890,15 @@ export async function importTransactionsToDatabase({institutionId, transactions,
 	if (!institution) {
 		throw new Error('Institution not found.');
 	}
+	const accountSyncResult = syncAccountsToSqlite(normalized.accounts);
+	if (Number(accountSyncResult?.skippedTransactions) > 0) {
+		// Keep the warning available for callers while still allowing import.
+		// The app can surface this as needed.
+	}
+	const sqliteAccount = sqliteAdapter.getAllAccounts().find((item) => item.id === institutionId);
+	if (!sqliteAccount) {
+		throw new Error('Institution not found in SQLite store.');
+	}
 
 	const sqliteCategories = sqliteAdapter.getAllCategories();
 	const existingCategoryById = new Map(
@@ -709,7 +915,20 @@ export async function importTransactionsToDatabase({institutionId, transactions,
 	}
 
 	const normalizedIncomingTransactions = (transactions ?? [])
-		.map((transaction) => normalizeTransaction(transaction, existingCategoryById))
+		.map((transaction) => {
+			const normalizedTransaction = normalizeTransaction(transaction, existingCategoryById);
+			if (!normalizedTransaction) {
+				return null;
+			}
+			if (normalizedTransaction.user_id && normalizedTransaction.user_id !== institution.user_id) {
+				throw new Error('Transaction user does not match selected institution user.');
+			}
+			return {
+				...normalizedTransaction,
+				user_id: institution.user_id,
+				institution_id: institutionId
+			};
+		})
 		.filter((transaction) => transaction !== null);
 
 	const sqliteWriteResult = sqliteAdapter.runInTransaction((ctx) => {
@@ -731,8 +950,29 @@ export async function importTransactionsToDatabase({institutionId, transactions,
 	await fs.writeFile(DB_PATH, JSON.stringify(normalized, null, 2), 'utf8');
 	return {
 		count: normalizedIncomingTransactions.length,
-		categories: sqliteWriteResult.categories ?? []
+		categories: sqliteWriteResult.categories ?? [],
+		institutionName: institution.name
 	};
+}
+
+export async function saveUiState({institutionFilterByTab}) {
+	const raw = await fs.readFile(DB_PATH, 'utf8');
+	const parsed = JSON.parse(raw);
+	const {normalized} = normalizeDatabaseShape(parsed);
+	const now = new Date().toISOString();
+	const nextUiState = normalizeUiState({
+		...(normalized.meta?.ui_state ?? {}),
+		institution_filter_by_tab: normalizeInstitutionFilterByTab(institutionFilterByTab)
+	});
+
+	normalized.meta = {
+		...normalized.meta,
+		ui_state: nextUiState,
+		updated_at: now
+	};
+
+	await fs.writeFile(DB_PATH, JSON.stringify(normalized, null, 2), 'utf8');
+	return nextUiState;
 }
 
 export async function updateTransactionCategoryInDatabase({transactionId, categoryPath}) {

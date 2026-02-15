@@ -28,11 +28,12 @@ export function AddTransactionsModal({
 				<Text color="#32496b">CSV path:</Text>
 				<Text color="#2b3f5a">{csvPathInput || '|'}</Text>
 
-				{step === 'preview' && preview && (
-					<>
-						<Text color="#4f6480"> </Text>
-						<Text color="#1e2f47">Preview</Text>
-						<Text color="#32496b">File: {preview.resolvedPath}</Text>
+					{step === 'preview' && preview && (
+						<>
+							<Text color="#4f6480"> </Text>
+							<Text color="#1e2f47">Preview</Text>
+							<Text color="#32496b">Import into: {selectedInstitution?.name ?? 'None available'}</Text>
+							<Text color="#32496b">File: {preview.resolvedPath}</Text>
 						<Text color="#32496b">Rows: {preview.count}</Text>
 						<Text color="#32496b">Range: {preview.dateFrom} to {preview.dateTo}</Text>
 						{preview.categorization && (

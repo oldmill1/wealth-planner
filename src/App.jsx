@@ -18,11 +18,19 @@ import {
 	isValidTimezone,
 	previewTransactionsCsvImport,
 	saveFirstUser,
+	saveUiState,
 	updateTransactionCategoryInDatabase
 } from './services/database.js';
 import {categorizeTransactionsInBatches} from './services/ai/categorizeTransactions.js';
 import {executeCommand, loadOrInitCommandRegistry} from './services/commands.js';
 import {transactionRepository} from './services/data/index.js';
+import {
+	DEFAULT_INSTITUTION_FILTER_BY_TAB,
+	getInstitutionIdsForTab,
+	getInstitutionMatchText,
+	normalizeInstitutionFilterByTab,
+	parseSwitchQuery
+} from './services/institutionSwitch.js';
 
 function mapInstitutionToRow(institution) {
 	const updatedAt = institution.updated_at ?? null;
@@ -35,7 +43,10 @@ function mapInstitutionToRow(institution) {
 		balance: '--',
 		updatedAt,
 		lastUpdated: formatLastUpdated(updatedAt),
-		accountMask: '...'
+		accountMask: '...',
+		aliases: institution.aliases && typeof institution.aliases === 'object'
+			? institution.aliases
+			: {}
 	};
 }
 
@@ -84,8 +95,8 @@ function withEmptyInstitutionRow(rows, placeholderLabel = 'Add First Deposit Acc
 
 const TAB_COMMANDS = {
 	Home: ['clean_db'],
-	Balances: ['add_deposit_account', 'upload_csv', 'search', 'clear'],
-	Credit: ['add_credit_account', 'upload_csv', 'search', 'clear']
+	Balances: ['add_deposit_account', 'upload_csv', 'switch', 'search', 'clear'],
+	Credit: ['add_credit_account', 'upload_csv', 'switch', 'search', 'clear']
 };
 const RECENT_TRANSACTIONS_LIMIT = 20;
 
@@ -125,18 +136,6 @@ function parseSearchQuery(argsRaw) {
 		}
 	}
 	return trimmed;
-}
-
-function getInstitutionIdsForTab(currentUserRows, tab) {
-	if (tab === 'Balances') {
-		return currentUserRows.filter((row) => row.type === 'BANK').map((row) => row.id);
-	}
-	if (tab === 'Credit') {
-		return currentUserRows
-			.filter((row) => row.type === 'CREDIT' || row.type === 'CREDIT_CARD')
-			.map((row) => row.id);
-	}
-	return [];
 }
 
 function isSpaceKeypress(input, key) {
@@ -256,18 +255,25 @@ function computeCashFlowSummary({transactions, timezone, days = 30}) {
 	};
 }
 
-function buildTabTransactionState({
+export function buildTabTransactionState({
 	currentTab,
 	accountRows,
 	transactions,
 	activeTransactionFilter,
 	userId,
-	userTimezone
+	userTimezone,
+	institutionFilterByTab
 }) {
 	const currentUserRows = accountRows.filter((row) => row.userId === userId);
 
 	if (currentTab === 'Balances') {
-		const institutionRows = currentUserRows.filter((row) => row.type === 'BANK');
+		const allInstitutionRows = currentUserRows.filter((row) => row.type === 'BANK');
+		const requestedFilter = String(institutionFilterByTab?.Balances ?? 'all').trim() || 'all';
+		const hasRequested = requestedFilter === 'all' || allInstitutionRows.some((row) => row.id === requestedFilter);
+		const effectiveFilter = hasRequested ? requestedFilter : 'all';
+		const institutionRows = effectiveFilter === 'all'
+			? allInstitutionRows
+			: allInstitutionRows.filter((row) => row.id === effectiveFilter);
 		const institutionIds = institutionRows.map((row) => row.id);
 		const allTransactions = transactionRepository.findTransactionsByUserAndInstitutions({
 			userId,
@@ -296,18 +302,30 @@ function buildTabTransactionState({
 			transactionsSectionTitle: activeTransactionFilter?.type === 'category_search'
 				? activeTransactionFilter.header
 				: 'RECENT TRANSACTIONS',
-			cashFlow30d: computeCashFlowSummary({
-				transactions: allTransactions,
-				timezone: userTimezone,
-				days: 30
-			}),
-			searchLabel: 'institution:all',
-			summaryLabel: 'Balances'
-		};
+				cashFlow30d: computeCashFlowSummary({
+					transactions: allTransactions,
+					timezone: userTimezone,
+					days: 30
+				}),
+				searchLabel: `institution:${effectiveFilter === 'all' ? 'all' : (institutionRows[0]?.name ?? effectiveFilter)}`,
+				summaryLabel: 'Balances',
+				filter: {
+					tab: 'Balances',
+					requested: requestedFilter,
+					effective: effectiveFilter,
+					isValid: hasRequested
+				}
+			};
 	}
 
 	if (currentTab === 'Credit') {
-		const institutionRows = currentUserRows.filter((row) => row.type === 'CREDIT' || row.type === 'CREDIT_CARD');
+		const allInstitutionRows = currentUserRows.filter((row) => row.type === 'CREDIT' || row.type === 'CREDIT_CARD');
+		const requestedFilter = String(institutionFilterByTab?.Credit ?? 'all').trim() || 'all';
+		const hasRequested = requestedFilter === 'all' || allInstitutionRows.some((row) => row.id === requestedFilter);
+		const effectiveFilter = hasRequested ? requestedFilter : 'all';
+		const institutionRows = effectiveFilter === 'all'
+			? allInstitutionRows
+			: allInstitutionRows.filter((row) => row.id === effectiveFilter);
 		const institutionIds = institutionRows.map((row) => row.id);
 		const allTransactions = transactionRepository.findTransactionsByUserAndInstitutions({
 			userId,
@@ -336,10 +354,16 @@ function buildTabTransactionState({
 			transactionsSectionTitle: activeTransactionFilter?.type === 'category_search'
 				? activeTransactionFilter.header
 				: 'RECENT TRANSACTIONS',
-			cashFlow30d: null,
-			searchLabel: 'credit_card:all',
-			summaryLabel: 'Credit Cards'
-		};
+				cashFlow30d: null,
+				searchLabel: `credit_card:${effectiveFilter === 'all' ? 'all' : (institutionRows[0]?.name ?? effectiveFilter)}`,
+				summaryLabel: 'Credit Cards',
+				filter: {
+					tab: 'Credit',
+					requested: requestedFilter,
+					effective: effectiveFilter,
+					isValid: hasRequested
+				}
+			};
 	}
 
 	return null;
@@ -391,6 +415,7 @@ export function App() {
 	const [transactions, setTransactions] = useState([]);
 	const [categories, setCategories] = useState([]);
 	const [userActivities, setUserActivities] = useState([]);
+	const [institutionFilterByTab, setInstitutionFilterByTab] = useState(DEFAULT_INSTITUTION_FILTER_BY_TAB);
 	const transactionCategorizationRunRef = useRef(0);
 	const uploadTargetTypes = useMemo(() => {
 		if (currentTab === 'Balances') {
@@ -426,9 +451,10 @@ export function App() {
 			transactions,
 			activeTransactionFilter,
 			userId: user?.id,
-			userTimezone: user?.timezone
+			userTimezone: user?.timezone,
+			institutionFilterByTab
 		})
-	), [currentTab, accountRows, transactions, activeTransactionFilter, user?.id, user?.timezone]);
+	), [currentTab, accountRows, transactions, activeTransactionFilter, user?.id, user?.timezone, institutionFilterByTab]);
 	const transactionFocusContext = useMemo(() => {
 		if (!activeTabTransactionState || bootState !== 'ready') {
 			return {visibleTransactionRows: [], hasFocusableTransactions: false};
@@ -460,7 +486,7 @@ export function App() {
 
 	useEffect(() => {
 		setShowRemainingTransactions(false);
-	}, [currentTab, activeTransactionFilter, transactions.length, terminalHeight]);
+	}, [currentTab, activeTransactionFilter, transactions.length, terminalHeight, institutionFilterByTab]);
 
 	useEffect(() => {
 		setIsTransactionFocusMode(false);
@@ -487,6 +513,26 @@ export function App() {
 	}, [isTransactionFocusMode, focusedTransactionIndex, transactionFocusContext.visibleTransactionRows]);
 
 	useEffect(() => {
+		if (!activeTabTransactionState?.filter) {
+			return;
+		}
+		if (activeTabTransactionState.filter.isValid) {
+			return;
+		}
+		const tab = activeTabTransactionState.filter.tab;
+		setInstitutionFilterByTab((prev) => {
+			const next = normalizeInstitutionFilterByTab(prev);
+			if (next[tab] === 'all') {
+				return next;
+			}
+			next[tab] = 'all';
+			saveUiState({institutionFilterByTab: next}).catch(() => {});
+			return next;
+		});
+		setCommandMessage(`Institution filter reset in ${tab} because that account is no longer available.`);
+	}, [activeTabTransactionState]);
+
+	useEffect(() => {
 		let mounted = true;
 		(async () => {
 			try {
@@ -506,10 +552,16 @@ export function App() {
 				}
 				setUser(bios.user);
 				setAccountRows((bios.accounts ?? bios.institutions ?? []).map(mapInstitutionToRow));
-				setTransactions(bios.transactions ?? []);
-				setCategories(bios.categories ?? []);
-				setUserActivities(bios.userActivity ?? []);
-				setBootState('ready');
+					setTransactions(bios.transactions ?? []);
+					setCategories(bios.categories ?? []);
+					setUserActivities(bios.userActivity ?? []);
+					setInstitutionFilterByTab(normalizeInstitutionFilterByTab(bios.uiState?.institution_filter_by_tab));
+					if (Number(bios.warnings?.skippedTransactions) > 0) {
+						setCommandMessage(
+							`Skipped ${bios.warnings.skippedTransactions} orphaned transactions during SQLite account migration.`
+						);
+					}
+					setBootState('ready');
 			} catch (error) {
 				if (!mounted) {
 					return;
@@ -628,12 +680,20 @@ export function App() {
 					return;
 				}
 
-				setIsCreatingInstitution(true);
-				const composedName = `${trimmedName} ${trimmedType} Account`;
-				addInstitutionForUser({userId: user.id, name: composedName})
-					.then((institution) => {
-						setAccountRows((prev) => [...prev, mapInstitutionToRow(institution)]);
-						setCommandMessage(`Institution "${institution.name}" created.`);
+					setIsCreatingInstitution(true);
+					const composedName = `${trimmedName} ${trimmedType} Account`;
+					addInstitutionForUser({
+						userId: user.id,
+						name: composedName,
+						type: 'BANK',
+						aliases: {
+							nickname: trimmedType,
+							switch_tokens: [trimmedName, trimmedType]
+						}
+					})
+						.then((institution) => {
+							setAccountRows((prev) => [...prev, mapInstitutionToRow(institution)]);
+							setCommandMessage(`Institution "${institution.name}" created.`);
 						setIsAddInstitutionModalOpen(false);
 						setAddInstitutionNameInput('');
 						setAddInstitutionTypeInput('');
@@ -712,11 +772,19 @@ export function App() {
 					return;
 				}
 
-				setIsCreatingCreditAccount(true);
-				const composedName = `${trimmedInstitutionName} ${trimmedLastFour} Credit Card`;
-				addInstitutionForUser({userId: user.id, name: composedName, type: 'CREDIT'})
-					.then((account) => {
-						setAccountRows((prev) => [...prev, mapInstitutionToRow(account)]);
+					setIsCreatingCreditAccount(true);
+					const composedName = `${trimmedInstitutionName} ${trimmedLastFour} Credit Card`;
+					addInstitutionForUser({
+						userId: user.id,
+						name: composedName,
+						type: 'CREDIT',
+						aliases: {
+							last4: trimmedLastFour,
+							switch_tokens: [trimmedInstitutionName, trimmedLastFour]
+						}
+					})
+						.then((account) => {
+							setAccountRows((prev) => [...prev, mapInstitutionToRow(account)]);
 						setCommandMessage(`Credit account "${account.name}" created.`);
 						setIsAddCreditAccountModalOpen(false);
 						setCreditInstitutionNameInput('');
@@ -860,13 +928,15 @@ export function App() {
 
 					setIsImportingTransactions(true);
 					const selectedInstitution = transactionInstitutionRows[transactionInstitutionIndex];
-					importTransactionsToDatabase({
-						institutionId: selectedInstitution.id,
-						transactions: transactionPreview.transactions,
-						categories: transactionPreview.categories ?? categories
-					})
-						.then((result) => {
-							setCommandMessage(`Imported ${result.count} transactions.`);
+						importTransactionsToDatabase({
+							institutionId: selectedInstitution.id,
+							transactions: transactionPreview.transactions,
+							categories: transactionPreview.categories ?? categories
+						})
+							.then((result) => {
+								setCommandMessage(
+									`Imported ${result.count} transactions into ${result.institutionName ?? selectedInstitution.name}.`
+								);
 							const nowIso = new Date().toISOString();
 							setTransactions((prev) => [...prev, ...transactionPreview.transactions]);
 							setCategories((prev) => mergeCategories(prev, result.categories ?? []));
@@ -979,16 +1049,20 @@ export function App() {
 					return;
 				}
 
-				if (commandToRun === 'search') {
-					const query = parseSearchQuery(argsRaw);
+					if (commandToRun === 'search') {
+						const query = parseSearchQuery(argsRaw);
 					if (!query) {
 						setCommandMessage('Please provide a search query. Example: /search "restaurants"');
 						return;
 					}
 
-					const currentUserRows = accountRows.filter((row) => row.userId === user?.id);
-					const institutionIds = getInstitutionIdsForTab(currentUserRows, currentTab);
-					const matchedTransactions = transactionRepository.findTransactionsByCategorySearch({
+						const currentUserRows = accountRows.filter((row) => row.userId === user?.id);
+						const institutionIds = getInstitutionIdsForTab(
+							currentUserRows,
+							currentTab,
+							institutionFilterByTab[currentTab]
+						);
+						const matchedTransactions = transactionRepository.findTransactionsByCategorySearch({
 						userId: user?.id,
 						institutionIds,
 						query,
@@ -1007,10 +1081,74 @@ export function App() {
 					setCommandMode(false);
 					setCommandInput('');
 					setSelectedSuggestionIndex(0);
-					return;
-				}
+						return;
+					}
 
-				if (commandToRun === 'clear') {
+					if (commandToRun === 'switch') {
+						if (!(currentTab === 'Balances' || currentTab === 'Credit')) {
+							setCommandMessage('Switch is available only on Balances or Credit.');
+							return;
+						}
+						const query = parseSwitchQuery(argsRaw);
+						if (!query) {
+							setCommandMessage('Please provide an institution query. Example: /switch "2006" or /switch all');
+							return;
+						}
+						const normalizedQuery = query.toLowerCase();
+						const tabRows = accountRows.filter((row) => (
+							row.userId === user?.id && (
+								currentTab === 'Balances'
+									? row.type === 'BANK'
+									: (row.type === 'CREDIT' || row.type === 'CREDIT_CARD')
+							)
+						));
+						if (normalizedQuery === 'all') {
+							const next = {
+								...normalizeInstitutionFilterByTab(institutionFilterByTab),
+								[currentTab]: 'all'
+							};
+							setInstitutionFilterByTab(next);
+							saveUiState({institutionFilterByTab: next}).catch((error) => {
+								setCommandMessage(`Failed to persist switch filter: ${error.message}`);
+							});
+							setFocusedTransactionIndex(0);
+							setIsTransactionFocusMode(false);
+							setCommandMessage(`Switched ${currentTab} view to institution:all.`);
+							setCommandMode(false);
+							setCommandInput('');
+							setSelectedSuggestionIndex(0);
+							return;
+						}
+
+						const matches = tabRows.filter((row) => getInstitutionMatchText(row).includes(normalizedQuery));
+						if (matches.length === 0) {
+							setCommandMessage(`No institution matched "${query}".`);
+							return;
+						}
+						if (matches.length > 1) {
+							const list = matches.map((row) => row.name).join(', ');
+							setCommandMessage(`Multiple institutions matched "${query}": ${list}. Refine /switch query.`);
+							return;
+						}
+
+						const next = {
+							...normalizeInstitutionFilterByTab(institutionFilterByTab),
+							[currentTab]: matches[0].id
+						};
+						setInstitutionFilterByTab(next);
+						saveUiState({institutionFilterByTab: next}).catch((error) => {
+							setCommandMessage(`Failed to persist switch filter: ${error.message}`);
+						});
+						setFocusedTransactionIndex(0);
+						setIsTransactionFocusMode(false);
+						setCommandMessage(`Switched ${currentTab} view to ${matches[0].name}.`);
+						setCommandMode(false);
+						setCommandInput('');
+						setSelectedSuggestionIndex(0);
+						return;
+					}
+
+					if (commandToRun === 'clear') {
 					if (!activeTransactionFilter) {
 						setCommandMessage('No active search filter.');
 					} else {
@@ -1034,6 +1172,7 @@ export function App() {
 							setTransactions([]);
 							setCategories([]);
 							setUserActivities([]);
+							setInstitutionFilterByTab(DEFAULT_INSTITUTION_FILTER_BY_TAB);
 							setActiveTransactionFilter(null);
 							setNameInput('');
 							setTimezoneInput(DEFAULT_TIMEZONE);
@@ -1199,9 +1338,10 @@ export function App() {
 						setUser(savedUser);
 						setAccountRows([]);
 						setTransactions([]);
-						setCategories([]);
-						setUserActivities([]);
-						setBootState('ready');
+							setCategories([]);
+							setUserActivities([]);
+							setInstitutionFilterByTab(DEFAULT_INSTITUTION_FILTER_BY_TAB);
+							setBootState('ready');
 					})
 					.catch((error) => {
 						setErrorMessage(error.message || 'Failed to save user.');

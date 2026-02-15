@@ -303,11 +303,12 @@ export function Dashboard({
 				{hasOverflowTransactions && !showingRemainder && (
 					<Text color="#6f7396"> Press space for more results</Text>
 				)}
-				{hasOverflowTransactions && showingRemainder && (
-					<Text color="#6f7396"> No more results in this set</Text>
-				)}
-				<Text color="#6b74a8"> Source: ~/.config/wealth-planner/main.json</Text>
-			</Box>
+					{hasOverflowTransactions && showingRemainder && (
+						<Text color="#6f7396"> No more results in this set</Text>
+					)}
+					<Text color="#6b74a8"> Filter: {searchLabel}</Text>
+					<Text color="#6b74a8"> Source: ~/.config/wealth-planner/main.json</Text>
+				</Box>
 			<Box width={1}>
 				<Text color="#2f325a">│</Text>
 			</Box>

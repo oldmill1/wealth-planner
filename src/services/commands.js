@@ -56,6 +56,11 @@ function normalizeCommandRegistryShape(parsed) {
 		changed = true;
 	}
 
+	if (!normalized.commands.switch || typeof normalized.commands.switch !== 'object') {
+		normalized.commands.switch = {...DEFAULT_COMMAND_REGISTRY.commands.switch};
+		changed = true;
+	}
+
 	if (!normalized.commands.search || typeof normalized.commands.search !== 'object') {
 		normalized.commands.search = {...DEFAULT_COMMAND_REGISTRY.commands.search};
 		changed = true;
