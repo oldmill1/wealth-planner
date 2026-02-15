@@ -103,9 +103,15 @@ export async function executeCommand(commandName) {
 	if (commandName === 'clean_db') {
 		const result = await cleanDb();
 		if (!result.removed) {
-			return `No database found at ${result.dbPath}.`;
+			return `No database found at ${result.dbPath} or ${result.sqliteDbPath}.`;
 		}
-		return `Database removed. Backup: ${result.backupPath}`;
+		const backups = [
+			result.backupPaths?.json ? `JSON: ${result.backupPaths.json}` : null,
+			result.backupPaths?.sqlite ? `SQLite: ${result.backupPaths.sqlite}` : null
+		].filter(Boolean).join(' | ');
+		return backups
+			? `Databases removed. Backups: ${backups}`
+			: 'Databases removed.';
 	}
 	throw new Error(`Unknown command: /${commandName}`);
 }

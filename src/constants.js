@@ -3,6 +3,7 @@ import path from 'node:path';
 
 export const CONFIG_DIR = path.join(os.homedir(), '.config', 'wealth-planner');
 export const DB_PATH = path.join(CONFIG_DIR, 'main.json');
+export const SQLITE_DB_PATH = path.join(CONFIG_DIR, 'main.db');
 export const COMMANDS_PATH = path.join(CONFIG_DIR, 'commands.json');
 
 export const DEFAULT_TIMEZONE = 'America/New_York';

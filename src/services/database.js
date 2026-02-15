@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import {DB_PATH, CONFIG_DIR, INSTITUTION_TYPES} from '../constants.js';
+import {createSqliteAdapter} from './data/adapters/sqliteAdapter.js';
 
 const DEFAULT_CATEGORY_ID = 'uncategorized';
 const DEFAULT_CATEGORY_PATH = 'Uncategorized';
@@ -11,6 +12,7 @@ const DEFAULT_CATEGORY = {
 	name: DEFAULT_CATEGORY_PATH,
 	parent_id: null
 };
+const sqliteAdapter = createSqliteAdapter();
 
 function createRecord({name, timezone}) {
 	const now = new Date().toISOString();
@@ -336,28 +338,49 @@ function createDatabase(user) {
 		},
 		users: [user],
 		accounts: [],
-		categories: [DEFAULT_CATEGORY],
+		categories: [],
 		transactions: [],
 		user_activity: []
 	};
 }
 
 export async function loadOrInitDatabase() {
+	await sqliteAdapter.ensureReady();
 	try {
 		await fs.access(DB_PATH);
 		const raw = await fs.readFile(DB_PATH, 'utf8');
 		const parsed = JSON.parse(raw);
 		const {normalized, changed} = normalizeDatabaseShape(parsed);
-		if (changed) {
+		const hasOnlyDefaultCategory = Array.isArray(normalized.categories) &&
+			normalized.categories.length === 1 &&
+			String(normalized.categories[0]?.id ?? '').toLowerCase() === DEFAULT_CATEGORY_ID;
+		const shouldClearEmbeddedCollections = (
+			Array.isArray(normalized.transactions) &&
+			normalized.transactions.length > 0
+		) || (
+			Array.isArray(normalized.categories) &&
+			normalized.categories.length > 0 &&
+			!hasOnlyDefaultCategory
+		);
+		if (shouldClearEmbeddedCollections) {
+			normalized.transactions = [];
+			normalized.categories = [];
+			normalized.meta = {
+				...normalized.meta,
+				updated_at: new Date().toISOString()
+			};
+		}
+		if (changed || shouldClearEmbeddedCollections) {
 			await fs.writeFile(DB_PATH, JSON.stringify(normalized, null, 2), 'utf8');
 		}
+		const sqliteData = await sqliteAdapter.loadDatabase();
 		const firstUser = normalized.users?.[0] ?? null;
 		return {
 			firstRun: false,
 			user: firstUser,
 			accounts: normalized.accounts ?? [],
-			categories: normalized.categories ?? [],
-			transactions: normalized.transactions ?? [],
+			categories: sqliteData.categories ?? [DEFAULT_CATEGORY],
+			transactions: sqliteData.transactions ?? [],
 			userActivity: normalized.user_activity ?? []
 		};
 	} catch (error) {
@@ -370,6 +393,7 @@ export async function loadOrInitDatabase() {
 
 export async function saveFirstUser(name, timezone) {
 	await fs.mkdir(CONFIG_DIR, {recursive: true});
+	await sqliteAdapter.ensureReady();
 	const user = createRecord({name, timezone});
 	const database = createDatabase(user);
 	await fs.writeFile(DB_PATH, JSON.stringify(database, null, 2), 'utf8');
@@ -710,9 +734,10 @@ export async function importTransactionsToDatabase({institutionId, transactions,
 		throw new Error('Institution not found.');
 	}
 
+	const sqliteCategories = sqliteAdapter.getAllCategories();
 	const existingCategoryById = new Map(
 		[
-			...(normalized.categories ?? []),
+			...(sqliteCategories ?? []),
 			...(categories ?? [])
 		]
 			.map(normalizeCategory)
@@ -726,8 +751,19 @@ export async function importTransactionsToDatabase({institutionId, transactions,
 	const normalizedIncomingTransactions = (transactions ?? [])
 		.map((transaction) => normalizeTransaction(transaction, existingCategoryById))
 		.filter((transaction) => transaction !== null);
-	normalized.transactions = [...(normalized.transactions ?? []), ...normalizedIncomingTransactions];
-	normalized.categories = deriveCategoriesFromTransactions(normalized.transactions);
+
+	const sqliteWriteResult = sqliteAdapter.runInTransaction((ctx) => {
+		ctx.insertTransactions(normalizedIncomingTransactions);
+		const allTransactions = ctx.getAllTransactions();
+		const rebuiltCategories = deriveCategoriesFromTransactions(allTransactions);
+		ctx.replaceCategories(rebuiltCategories);
+		return {
+			categories: rebuiltCategories
+		};
+	});
+
+	normalized.transactions = [];
+	normalized.categories = [];
 	institution.transaction_ids = [
 		...(institution.transaction_ids ?? []),
 		...normalizedIncomingTransactions.map((item) => item.id)
@@ -741,7 +777,7 @@ export async function importTransactionsToDatabase({institutionId, transactions,
 	await fs.writeFile(DB_PATH, JSON.stringify(normalized, null, 2), 'utf8');
 	return {
 		count: normalizedIncomingTransactions.length,
-		categories: normalized.categories ?? []
+		categories: sqliteWriteResult.categories ?? []
 	};
 }
 
@@ -755,23 +791,28 @@ export async function updateTransactionCategoryInDatabase({transactionId, catego
 	const parsed = JSON.parse(raw);
 	const {normalized} = normalizeDatabaseShape(parsed);
 	const now = new Date().toISOString();
-	const targetIndex = (normalized.transactions ?? []).findIndex((item) => item?.id === trimmedTransactionId);
-
-	if (targetIndex === -1) {
-		throw new Error('Transaction not found.');
-	}
-
-	const updatedTransaction = normalizeTransaction({
-		...normalized.transactions[targetIndex],
-		category_path: categoryPath,
-		updated_at: now
+	const normalizedCategoryPath = normalizeCategoryPath(categoryPath);
+	const sqliteWriteResult = sqliteAdapter.runInTransaction((ctx) => {
+		const existing = ctx.getTransactionById(trimmedTransactionId);
+		if (!existing) {
+			throw new Error('Transaction not found.');
+		}
+		ctx.updateTransactionCategory(trimmedTransactionId, normalizedCategoryPath, now);
+		const allTransactions = ctx.getAllTransactions();
+		const rebuiltCategories = deriveCategoriesFromTransactions(allTransactions);
+		ctx.replaceCategories(rebuiltCategories);
+		const updatedTransaction = ctx.getTransactionById(trimmedTransactionId);
+		if (!updatedTransaction) {
+			throw new Error('Failed to load updated transaction.');
+		}
+		return {
+			transaction: updatedTransaction,
+			categories: rebuiltCategories
+		};
 	});
-	if (!updatedTransaction) {
-		throw new Error('Failed to normalize updated transaction.');
-	}
 
-	normalized.transactions[targetIndex] = updatedTransaction;
-	normalized.categories = deriveCategoriesFromTransactions(normalized.transactions);
+	normalized.transactions = [];
+	normalized.categories = [];
 	normalized.meta = {
 		...normalized.meta,
 		updated_at: now
@@ -779,8 +820,8 @@ export async function updateTransactionCategoryInDatabase({transactionId, catego
 
 	await fs.writeFile(DB_PATH, JSON.stringify(normalized, null, 2), 'utf8');
 	return {
-		transaction: updatedTransaction,
-		categories: normalized.categories ?? []
+		transaction: sqliteWriteResult.transaction,
+		categories: sqliteWriteResult.categories ?? []
 	};
 }
 
