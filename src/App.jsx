@@ -1039,7 +1039,27 @@ export function App() {
 				return;
 			}
 
+			if ((currentTab === 'Balances' || currentTab === 'Credit') && isTransactionFocusMode && String(input ?? '').toLowerCase() === 's') {
+				const rowCount = transactionFocusContext.visibleTransactionRows.length;
+				if (rowCount <= 0) {
+					setCommandMessage('No transactions to select.');
+					return;
+				}
+				setFocusedTransactionIndex((prev) => (prev + 1) % rowCount);
+				return;
+			}
+
 			if ((currentTab === 'Balances' || currentTab === 'Credit') && isTransactionFocusMode && key.upArrow) {
+				const rowCount = transactionFocusContext.visibleTransactionRows.length;
+				if (rowCount <= 0) {
+					setCommandMessage('No transactions to select.');
+					return;
+				}
+				setFocusedTransactionIndex((prev) => (prev - 1 + rowCount) % rowCount);
+				return;
+			}
+
+			if ((currentTab === 'Balances' || currentTab === 'Credit') && isTransactionFocusMode && String(input ?? '').toLowerCase() === 'w') {
 				const rowCount = transactionFocusContext.visibleTransactionRows.length;
 				if (rowCount <= 0) {
 					setCommandMessage('No transactions to select.');
