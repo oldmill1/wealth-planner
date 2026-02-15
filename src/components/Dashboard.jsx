@@ -244,8 +244,11 @@ export function Dashboard({
 	cashFlow30d = null
 }) {
 	const leftPaneWidth = Math.max(56, Math.floor(terminalWidth * 0.62));
-	const rightPaneWidth = Math.max(28, terminalWidth - leftPaneWidth - 6);
-	const checklistWidth = Math.max(24, rightPaneWidth - 2);
+		const shouldRenderRightPane = Boolean(cashFlow30d);
+		const rightPaneWidth = shouldRenderRightPane
+			? Math.max(28, terminalWidth - leftPaneWidth - 6)
+			: 0;
+		const checklistWidth = Math.max(24, rightPaneWidth - 2);
 	const safeTableWidth = Math.max(56, leftPaneWidth - 8);
 	const estimatedAvailableLines = Math.max(12, terminalHeight - 12);
 	const fixedLeftPaneLines = 8;
@@ -309,45 +312,16 @@ export function Dashboard({
 					<Text color="#6b74a8"> Filter: {searchLabel}</Text>
 					<Text color="#6b74a8"> Source: ~/.config/wealth-planner/main.json</Text>
 				</Box>
-			<Box width={1}>
-				<Text color="#2f325a">│</Text>
-			</Box>
-			<Box width={rightPaneWidth} flexDirection="column" paddingX={1}>
-				<Box
-					width={checklistWidth}
-					flexDirection="column"
-					borderStyle="round"
-					borderColor="#33406f"
-					backgroundColor="#151a30"
-					paddingX={2}
-					paddingY={1}
-				>
-					<Text color="#8f98c8">Setup Checklist</Text>
-					<Text color="#27305a">{'-'.repeat(Math.max(14, checklistWidth - 6))}</Text>
-					<Text color="#aeb2df">
-						<Text color={hasBalances ? '#58d7a3' : '#6f7396'}>● </Text>
-						<Text color={hasBalances ? '#d4dcff' : '#8f93bf'}>Add Deposit Account</Text>
-					</Text>
-					<Text color={hasBalances ? '#8f93bf' : '#6f7396'}>  Eg your chequing account</Text>
-					<Text color="#27305a">{'-'.repeat(Math.max(14, checklistWidth - 6))}</Text>
-					<Text color="#aeb2df">
-						<Text color={hasCredits ? '#58d7a3' : '#6f7396'}>● </Text>
-						<Text color={hasCredits ? '#d4dcff' : '#8f93bf'}>Add Credit Account</Text>
-					</Text>
-					<Text color={hasCredits ? '#8f93bf' : '#6f7396'}>  Eg your American Express card</Text>
-					<Text color="#27305a">{'-'.repeat(Math.max(14, checklistWidth - 6))}</Text>
-					<Box flexDirection="row">
-						<Text backgroundColor="#213a35" color="#80d5b4">  Ready  </Text>
-						<Box width={1} />
-						<Text backgroundColor="#1f2f56" color="#9db5e9">  Synced  </Text>
-					</Box>
-				</Box>
-				{cashFlow30d && (
-					<Box
-						marginTop={1}
-						width={checklistWidth}
-						flexDirection="column"
-						borderStyle="round"
+				{shouldRenderRightPane && (
+					<>
+						<Box width={1}>
+							<Text color="#2f325a">│</Text>
+						</Box>
+						<Box width={rightPaneWidth} flexDirection="column" paddingX={1}>
+						<Box
+							width={checklistWidth}
+							flexDirection="column"
+							borderStyle="round"
 						borderColor="#33406f"
 						backgroundColor="#151a30"
 						paddingX={2}
@@ -360,12 +334,13 @@ export function Dashboard({
 						</Text>
 						<Text color="#9ad4b6">In:  {formatCurrency(cashFlow30d.inflowCents)}</Text>
 						<Text color="#b6bddf">Out: {formatCurrency(cashFlow30d.outflowCents)}</Text>
-						<Text color={cashFlow30d.netCents >= 0 ? '#7ce0b0' : '#e39090'}>
-							Net: {cashFlow30d.netCents >= 0 ? '+' : '-'}{formatCurrency(cashFlow30d.netCents)}
-						</Text>
-					</Box>
+							<Text color={cashFlow30d.netCents >= 0 ? '#7ce0b0' : '#e39090'}>
+								Net: {cashFlow30d.netCents >= 0 ? '+' : '-'}{formatCurrency(cashFlow30d.netCents)}
+							</Text>
+						</Box>
+						</Box>
+					</>
 				)}
 			</Box>
-		</Box>
-	);
-}
+		);
+	}
