@@ -239,17 +239,10 @@ export function Dashboard({
 	focusedTransactionIndex = 0,
 	searchLabel = 'institution:all',
 	summaryLabel = 'Institutions',
-	hasBalances = false,
-	hasCredits = false,
 	cashFlow30d = null
 }) {
-	const leftPaneWidth = Math.max(56, Math.floor(terminalWidth * 0.62));
-		const shouldRenderRightPane = Boolean(cashFlow30d);
-		const rightPaneWidth = shouldRenderRightPane
-			? Math.max(28, terminalWidth - leftPaneWidth - 6)
-			: 0;
-		const checklistWidth = Math.max(24, rightPaneWidth - 2);
-	const safeTableWidth = Math.max(56, leftPaneWidth - 8);
+		const leftPaneWidth = Math.max(56, Math.floor(terminalWidth * 0.62));
+		const safeTableWidth = Math.max(56, leftPaneWidth - 8);
 	const estimatedAvailableLines = Math.max(12, terminalHeight - 12);
 	const fixedLeftPaneLines = 8;
 	const minTransactionLines = 2;
@@ -312,35 +305,6 @@ export function Dashboard({
 					<Text color="#6b74a8"> Filter: {searchLabel}</Text>
 					<Text color="#6b74a8"> Source: ~/.config/wealth-planner/main.json</Text>
 				</Box>
-				{shouldRenderRightPane && (
-					<>
-						<Box width={1}>
-							<Text color="#2f325a">│</Text>
-						</Box>
-						<Box width={rightPaneWidth} flexDirection="column" paddingX={1}>
-						<Box
-							width={checklistWidth}
-							flexDirection="column"
-							borderStyle="round"
-						borderColor="#33406f"
-						backgroundColor="#151a30"
-						paddingX={2}
-						paddingY={1}
-					>
-						<Text color="#8f98c8">Cash Flow</Text>
-						<Text color="#27305a">{'-'.repeat(Math.max(14, checklistWidth - 6))}</Text>
-						<Text color="#7f89be">
-							{formatDateShort(cashFlow30d.startDate)} - {formatDateShort(cashFlow30d.endDate)}
-						</Text>
-						<Text color="#9ad4b6">In:  {formatCurrency(cashFlow30d.inflowCents)}</Text>
-						<Text color="#b6bddf">Out: {formatCurrency(cashFlow30d.outflowCents)}</Text>
-							<Text color={cashFlow30d.netCents >= 0 ? '#7ce0b0' : '#e39090'}>
-								Net: {cashFlow30d.netCents >= 0 ? '+' : '-'}{formatCurrency(cashFlow30d.netCents)}
-							</Text>
-						</Box>
-						</Box>
-					</>
-				)}
 			</Box>
 		);
 	}
