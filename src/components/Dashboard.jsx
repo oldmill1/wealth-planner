@@ -152,6 +152,34 @@ function selectAccountRowsForHeight(accountRows, maxLines) {
 	return {rows: selected, usedLines};
 }
 
+export function deriveDashboardTransactionView({
+	terminalHeight,
+	accountRows,
+	transactionRows,
+	showRemainingTransactions = false
+}) {
+	const safeAccountRows = Array.isArray(accountRows) ? accountRows : [];
+	const safeTransactionRows = Array.isArray(transactionRows) ? transactionRows : [];
+	const estimatedAvailableLines = Math.max(12, terminalHeight - 12);
+	const fixedLeftPaneLines = 8;
+	const minTransactionLines = 2;
+	const accountLinesBudget = Math.max(1, estimatedAvailableLines - fixedLeftPaneLines - minTransactionLines);
+	const {usedLines: usedAccountLines} = selectAccountRowsForHeight(safeAccountRows, accountLinesBudget);
+	const transactionLinesBudget = Math.max(1, estimatedAvailableLines - fixedLeftPaneLines - usedAccountLines);
+	const hasOverflowTransactions = safeTransactionRows.length > transactionLinesBudget;
+	const showingRemainder = showRemainingTransactions && hasOverflowTransactions;
+	const visibleTransactionRows = showingRemainder
+		? safeTransactionRows.slice(transactionLinesBudget)
+		: safeTransactionRows.slice(0, transactionLinesBudget);
+
+	return {
+		visibleTransactionRows,
+		transactionLinesBudget,
+		hasOverflowTransactions,
+		showingRemainder
+	};
+}
+
 function formatAmount(amountCents) {
 	const absolute = (Math.abs(Number(amountCents) || 0) / 100).toFixed(2);
 	const sign = Number(amountCents) < 0 ? '-' : '+';
@@ -204,8 +232,11 @@ export function Dashboard({
 	terminalHeight,
 	accountRows,
 	transactionRows = [],
+	visibleTransactionRows: visibleTransactionRowsProp = null,
 	transactionsSectionTitle = 'RECENT TRANSACTIONS',
 	showRemainingTransactions = false,
+	isTransactionFocusMode = false,
+	focusedTransactionIndex = 0,
 	searchLabel = 'institution:all',
 	summaryLabel = 'Institutions',
 	hasBalances = false,
@@ -220,13 +251,20 @@ export function Dashboard({
 	const fixedLeftPaneLines = 8;
 	const minTransactionLines = 2;
 	const accountLinesBudget = Math.max(1, estimatedAvailableLines - fixedLeftPaneLines - minTransactionLines);
-	const {rows: visibleAccountRows, usedLines: usedAccountLines} = selectAccountRowsForHeight(accountRows, accountLinesBudget);
-	const transactionLinesBudget = Math.max(1, estimatedAvailableLines - fixedLeftPaneLines - usedAccountLines);
-	const hasOverflowTransactions = transactionRows.length > transactionLinesBudget;
-	const showingRemainder = showRemainingTransactions && hasOverflowTransactions;
-	const visibleTransactionRows = showingRemainder
-		? transactionRows.slice(transactionLinesBudget)
-		: transactionRows.slice(0, transactionLinesBudget);
+	const {rows: visibleAccountRows} = selectAccountRowsForHeight(accountRows, accountLinesBudget);
+	const {
+		visibleTransactionRows: derivedVisibleTransactionRows,
+		hasOverflowTransactions,
+		showingRemainder
+	} = deriveDashboardTransactionView({
+		terminalHeight,
+		accountRows,
+		transactionRows,
+		showRemainingTransactions
+	});
+	const visibleTransactionRows = Array.isArray(visibleTransactionRowsProp)
+		? visibleTransactionRowsProp
+		: derivedVisibleTransactionRows;
 	const tableHeader = renderTableLine(
 		Object.fromEntries(COLUMNS.map((column) => [column.key, column.label])),
 		computeColumnWidths(safeTableWidth)
@@ -250,9 +288,18 @@ export function Dashboard({
 				{visibleTransactionRows.length === 0 && (
 					<Text color="#6f7396"> No transactions yet</Text>
 				)}
-				{visibleTransactionRows.map((item) => (
-					<Text key={item.id} color="#95a0d1"> {formatTransactionLine(item, Math.max(30, leftPaneWidth - 6))}</Text>
-				))}
+				{visibleTransactionRows.map((item, index) => {
+					const isFocused = isTransactionFocusMode && index === focusedTransactionIndex;
+					return (
+						<Text
+							key={item.id}
+							color={isFocused ? '#dce6ff' : '#95a0d1'}
+							backgroundColor={isFocused ? '#2c3a66' : undefined}
+						>
+							{` ${formatTransactionLine(item, Math.max(30, leftPaneWidth - 6))}`}
+						</Text>
+					);
+				})}
 				{hasOverflowTransactions && !showingRemainder && (
 					<Text color="#6f7396"> Press space for more results</Text>
 				)}

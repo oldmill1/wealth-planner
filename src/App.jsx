@@ -6,7 +6,7 @@ import {AddInstitutionModal} from './components/AddInstitutionModal.jsx';
 import {AddTransactionsModal} from './components/AddTransactionsModal.jsx';
 import {DEFAULT_TIMEZONE, TABS} from './constants.js';
 import {BottomBar} from './components/BottomBar.jsx';
-import {Dashboard} from './components/Dashboard.jsx';
+import {Dashboard, deriveDashboardTransactionView} from './components/Dashboard.jsx';
 import {HomeActivityFeed} from './components/HomeActivityFeed.jsx';
 import {HomeOverviewPanel} from './components/HomeOverviewPanel.jsx';
 import {Tabs} from './components/Tabs.jsx';
@@ -254,6 +254,95 @@ function computeCashFlowSummary({transactions, timezone, days = 30}) {
 	};
 }
 
+function buildTabTransactionState({
+	currentTab,
+	accountRows,
+	transactions,
+	activeTransactionFilter,
+	userId,
+	userTimezone
+}) {
+	const currentUserRows = accountRows.filter((row) => row.userId === userId);
+
+	if (currentTab === 'Balances') {
+		const institutionRows = currentUserRows.filter((row) => row.type === 'BANK');
+		const institutionIds = institutionRows.map((row) => row.id);
+		const allTransactions = transactionRepository.findTransactionsByUserAndInstitutions({
+			userId,
+			institutionIds,
+			sort: 'posted_at_desc',
+			transactions
+		});
+		const recentTransactions = allTransactions.slice(0, RECENT_TRANSACTIONS_LIMIT);
+		const displayTransactions = activeTransactionFilter?.type === 'category_search'
+			? transactionRepository.findTransactionsByCategorySearch({
+				userId,
+				institutionIds,
+				query: activeTransactionFilter.query,
+				sort: 'posted_at_desc',
+				transactions
+			})
+			: recentTransactions;
+
+		return {
+			tableRows: withEmptyInstitutionRow(
+				institutionRows,
+				'Add First Deposit Account',
+				'add_first_institution'
+			),
+			displayTransactions,
+			transactionsSectionTitle: activeTransactionFilter?.type === 'category_search'
+				? activeTransactionFilter.header
+				: 'RECENT TRANSACTIONS',
+			cashFlow30d: computeCashFlowSummary({
+				transactions: allTransactions,
+				timezone: userTimezone,
+				days: 30
+			}),
+			searchLabel: 'institution:all',
+			summaryLabel: 'Balances'
+		};
+	}
+
+	if (currentTab === 'Credit') {
+		const institutionRows = currentUserRows.filter((row) => row.type === 'CREDIT' || row.type === 'CREDIT_CARD');
+		const institutionIds = institutionRows.map((row) => row.id);
+		const allTransactions = transactionRepository.findTransactionsByUserAndInstitutions({
+			userId,
+			institutionIds,
+			sort: 'posted_at_desc',
+			transactions
+		});
+		const recentTransactions = allTransactions.slice(0, RECENT_TRANSACTIONS_LIMIT);
+		const displayTransactions = activeTransactionFilter?.type === 'category_search'
+			? transactionRepository.findTransactionsByCategorySearch({
+				userId,
+				institutionIds,
+				query: activeTransactionFilter.query,
+				sort: 'posted_at_desc',
+				transactions
+			})
+			: recentTransactions;
+
+		return {
+			tableRows: withEmptyInstitutionRow(
+				institutionRows,
+				'Add First Credit Card',
+				'add_first_credit_card'
+			),
+			displayTransactions,
+			transactionsSectionTitle: activeTransactionFilter?.type === 'category_search'
+				? activeTransactionFilter.header
+				: 'RECENT TRANSACTIONS',
+			cashFlow30d: null,
+			searchLabel: 'credit_card:all',
+			summaryLabel: 'Credit Cards'
+		};
+	}
+
+	return null;
+}
+
 export function App() {
 	const {exit} = useApp();
 	const {stdout} = useStdout();
@@ -273,6 +362,8 @@ export function App() {
 	const [isRunningCommand, setIsRunningCommand] = useState(false);
 	const [activeTransactionFilter, setActiveTransactionFilter] = useState(null);
 	const [showRemainingTransactions, setShowRemainingTransactions] = useState(false);
+	const [isTransactionFocusMode, setIsTransactionFocusMode] = useState(false);
+	const [focusedTransactionIndex, setFocusedTransactionIndex] = useState(0);
 	const [currentTab, setCurrentTab] = useState('Home');
 	const [accountRows, setAccountRows] = useState([]);
 	const [isAddInstitutionModalOpen, setIsAddInstitutionModalOpen] = useState(false);
@@ -322,6 +413,31 @@ export function App() {
 		return availableCommands.filter((command) => fuzzyMatch(commandNameInput, command));
 	}, [availableCommands, commandNameInput]);
 	const selectedSuggestion = commandSuggestions[selectedSuggestionIndex] ?? commandSuggestions[0] ?? null;
+	const activeTabTransactionState = useMemo(() => (
+		buildTabTransactionState({
+			currentTab,
+			accountRows,
+			transactions,
+			activeTransactionFilter,
+			userId: user?.id,
+			userTimezone: user?.timezone
+		})
+	), [currentTab, accountRows, transactions, activeTransactionFilter, user?.id, user?.timezone]);
+	const transactionFocusContext = useMemo(() => {
+		if (!activeTabTransactionState || bootState !== 'ready') {
+			return {visibleTransactionRows: [], hasFocusableTransactions: false};
+		}
+		const view = deriveDashboardTransactionView({
+			terminalHeight,
+			accountRows: activeTabTransactionState.tableRows,
+			transactionRows: activeTabTransactionState.displayTransactions,
+			showRemainingTransactions
+		});
+		return {
+			visibleTransactionRows: view.visibleTransactionRows,
+			hasFocusableTransactions: view.visibleTransactionRows.length > 0
+		};
+	}, [activeTabTransactionState, bootState, terminalHeight, showRemainingTransactions]);
 
 	useEffect(() => {
 		setSelectedSuggestionIndex(0);
@@ -339,6 +455,26 @@ export function App() {
 	useEffect(() => {
 		setShowRemainingTransactions(false);
 	}, [currentTab, activeTransactionFilter, transactions.length, terminalHeight]);
+
+	useEffect(() => {
+		setIsTransactionFocusMode(false);
+		setFocusedTransactionIndex(0);
+	}, [currentTab]);
+
+	useEffect(() => {
+		if (!isTransactionFocusMode) {
+			return;
+		}
+		const rows = transactionFocusContext.visibleTransactionRows;
+		if (rows.length === 0) {
+			setIsTransactionFocusMode(false);
+			setFocusedTransactionIndex(0);
+			return;
+		}
+		if (focusedTransactionIndex >= rows.length) {
+			setFocusedTransactionIndex(0);
+		}
+	}, [isTransactionFocusMode, focusedTransactionIndex, transactionFocusContext.visibleTransactionRows]);
 
 	useEffect(() => {
 		let mounted = true;
@@ -792,6 +928,7 @@ export function App() {
 						query,
 						header: 'SEARCH RESULTS'
 					});
+					setFocusedTransactionIndex(0);
 					setCommandMessage(
 						`Search results: ${matchedTransactions.length} transaction${matchedTransactions.length === 1 ? '' : 's'} for "${query}".`
 					);
@@ -806,6 +943,7 @@ export function App() {
 						setCommandMessage('No active search filter.');
 					} else {
 						setActiveTransactionFilter(null);
+						setFocusedTransactionIndex(0);
 						setCommandMessage('Search filter cleared.');
 					}
 					setCommandMode(false);
@@ -873,7 +1011,48 @@ export function App() {
 		}
 
 		if (bootState === 'ready') {
+			if ((currentTab === 'Balances' || currentTab === 'Credit') && key.return) {
+				if (!transactionFocusContext.hasFocusableTransactions) {
+					setCommandMessage('No transactions to select.');
+					return;
+				}
+				if (!isTransactionFocusMode) {
+					setIsTransactionFocusMode(true);
+					setFocusedTransactionIndex(0);
+				}
+				return;
+			}
+
+			if ((currentTab === 'Balances' || currentTab === 'Credit') && isTransactionFocusMode && key.escape) {
+				setIsTransactionFocusMode(false);
+				setFocusedTransactionIndex(0);
+				return;
+			}
+
+			if ((currentTab === 'Balances' || currentTab === 'Credit') && isTransactionFocusMode && key.downArrow) {
+				const rowCount = transactionFocusContext.visibleTransactionRows.length;
+				if (rowCount <= 0) {
+					setCommandMessage('No transactions to select.');
+					return;
+				}
+				setFocusedTransactionIndex((prev) => (prev + 1) % rowCount);
+				return;
+			}
+
+			if ((currentTab === 'Balances' || currentTab === 'Credit') && isTransactionFocusMode && key.upArrow) {
+				const rowCount = transactionFocusContext.visibleTransactionRows.length;
+				if (rowCount <= 0) {
+					setCommandMessage('No transactions to select.');
+					return;
+				}
+				setFocusedTransactionIndex((prev) => (prev - 1 + rowCount) % rowCount);
+				return;
+			}
+
 			if (isSpaceKeypress(input, key) && (currentTab === 'Balances' || currentTab === 'Credit')) {
+				if (isTransactionFocusMode) {
+					setFocusedTransactionIndex(0);
+				}
 				setShowRemainingTransactions((prev) => {
 					const next = !prev;
 					setCommandMessage(next ? 'Showing more results.' : 'Showing first results.');
@@ -1016,37 +1195,10 @@ export function App() {
 		}
 
 		if (bootState === 'ready' && currentTab === 'Balances') {
-			const institutionOnlyRows = currentUserRows.filter((row) => row.type === 'BANK');
-			const balanceInstitutionIds = institutionOnlyRows.map((row) => row.id);
-			const balanceTransactions = transactionRepository.findTransactionsByUserAndInstitutions({
-				userId: user?.id,
-				institutionIds: balanceInstitutionIds,
-				sort: 'posted_at_desc',
-				transactions
-			});
-			const recentBalanceTransactions = balanceTransactions.slice(0, RECENT_TRANSACTIONS_LIMIT);
-			const displayTransactions = activeTransactionFilter?.type === 'category_search'
-				? transactionRepository.findTransactionsByCategorySearch({
-					userId: user?.id,
-					institutionIds: balanceInstitutionIds,
-					query: activeTransactionFilter.query,
-					sort: 'posted_at_desc',
-					transactions
-				})
-				: recentBalanceTransactions;
-			const transactionsSectionTitle = activeTransactionFilter?.type === 'category_search'
-				? activeTransactionFilter.header
-				: 'RECENT TRANSACTIONS';
-			const cashFlow30d = computeCashFlowSummary({
-				transactions: balanceTransactions,
-				timezone: user?.timezone,
-				days: 30
-			});
-			const tableRows = withEmptyInstitutionRow(
-				institutionOnlyRows,
-				'Add First Deposit Account',
-				'add_first_institution'
-			);
+			const tableState = activeTabTransactionState;
+			if (!tableState) {
+				return null;
+			}
 
 			return (
 				<>
@@ -1055,15 +1207,18 @@ export function App() {
 						<Dashboard
 							terminalWidth={terminalWidth}
 							terminalHeight={terminalHeight}
-							accountRows={tableRows}
-							transactionRows={displayTransactions}
-							transactionsSectionTitle={transactionsSectionTitle}
+							accountRows={tableState.tableRows}
+							transactionRows={tableState.displayTransactions}
+							visibleTransactionRows={transactionFocusContext.visibleTransactionRows}
+							transactionsSectionTitle={tableState.transactionsSectionTitle}
 							showRemainingTransactions={showRemainingTransactions}
-							searchLabel="institution:all"
-							summaryLabel="Balances"
+							isTransactionFocusMode={isTransactionFocusMode}
+							focusedTransactionIndex={focusedTransactionIndex}
+							searchLabel={tableState.searchLabel}
+							summaryLabel={tableState.summaryLabel}
 							hasBalances={hasBalances}
 							hasCredits={hasCredits}
-							cashFlow30d={cashFlow30d}
+							cashFlow30d={tableState.cashFlow30d}
 						/>
 					</Box>
 				</>
@@ -1071,32 +1226,10 @@ export function App() {
 		}
 
 		if (bootState === 'ready' && currentTab === 'Credit') {
-			const creditCardRows = currentUserRows.filter((row) => row.type === 'CREDIT' || row.type === 'CREDIT_CARD');
-			const creditInstitutionIds = creditCardRows.map((row) => row.id);
-			const creditTransactions = transactionRepository.findTransactionsByUserAndInstitutions({
-				userId: user?.id,
-				institutionIds: creditInstitutionIds,
-				sort: 'posted_at_desc',
-				transactions
-			});
-			const recentCreditTransactions = creditTransactions.slice(0, RECENT_TRANSACTIONS_LIMIT);
-			const displayTransactions = activeTransactionFilter?.type === 'category_search'
-				? transactionRepository.findTransactionsByCategorySearch({
-					userId: user?.id,
-					institutionIds: creditInstitutionIds,
-					query: activeTransactionFilter.query,
-					sort: 'posted_at_desc',
-					transactions
-				})
-				: recentCreditTransactions;
-			const transactionsSectionTitle = activeTransactionFilter?.type === 'category_search'
-				? activeTransactionFilter.header
-				: 'RECENT TRANSACTIONS';
-			const tableRows = withEmptyInstitutionRow(
-				creditCardRows,
-				'Add First Credit Card',
-				'add_first_credit_card'
-			);
+			const tableState = activeTabTransactionState;
+			if (!tableState) {
+				return null;
+			}
 
 			return (
 				<>
@@ -1105,12 +1238,15 @@ export function App() {
 						<Dashboard
 							terminalWidth={terminalWidth}
 							terminalHeight={terminalHeight}
-							accountRows={tableRows}
-							transactionRows={displayTransactions}
-							transactionsSectionTitle={transactionsSectionTitle}
+							accountRows={tableState.tableRows}
+							transactionRows={tableState.displayTransactions}
+							visibleTransactionRows={transactionFocusContext.visibleTransactionRows}
+							transactionsSectionTitle={tableState.transactionsSectionTitle}
 							showRemainingTransactions={showRemainingTransactions}
-							searchLabel="credit_card:all"
-							summaryLabel="Credit Cards"
+							isTransactionFocusMode={isTransactionFocusMode}
+							focusedTransactionIndex={focusedTransactionIndex}
+							searchLabel={tableState.searchLabel}
+							summaryLabel={tableState.summaryLabel}
 							hasBalances={hasBalances}
 							hasCredits={hasCredits}
 						/>
@@ -1133,7 +1269,35 @@ export function App() {
 				<HomeActivityFeed activities={feedItems} />
 			</Box>
 		);
-	}, [activeTransactionFilter, bootState, currentTab, errorMessage, accountRows, nameInput, showRemainingTransactions, terminalHeight, terminalWidth, timezoneInput, transactions, user, userActivities]);
+	}, [
+		activeTabTransactionState,
+		bootState,
+		currentTab,
+		errorMessage,
+		accountRows,
+		focusedTransactionIndex,
+		isTransactionFocusMode,
+		nameInput,
+		showRemainingTransactions,
+		terminalHeight,
+		terminalWidth,
+		timezoneInput,
+		transactionFocusContext.visibleTransactionRows,
+		transactions,
+		user,
+		userActivities
+	]);
+
+	const selectedFocusedTransaction = isTransactionFocusMode
+		? transactionFocusContext.visibleTransactionRows[focusedTransactionIndex] ?? null
+		: null;
+	const uiStatusMessage = isTransactionFocusMode
+		? (
+			selectedFocusedTransaction
+				? `Selected: ${String(selectedFocusedTransaction.description_raw ?? '').trim() || '(no description)'}`
+				: 'No transactions to select.'
+		)
+		: commandMessage;
 
 	return (
 		<Box
@@ -1184,7 +1348,7 @@ export function App() {
 				commandInput={commandInput}
 				suggestions={commandSuggestions}
 				selectedSuggestionIndex={selectedSuggestionIndex}
-				commandMessage={commandMessage}
+				commandMessage={uiStatusMessage}
 				isRunningCommand={isRunningCommand}
 			/>
 		</Box>
