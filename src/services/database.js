@@ -269,36 +269,21 @@ function normalizeDatabaseShape(parsed) {
 		: [DEFAULT_CATEGORY, ...sanitizedCategories];
 	const categoriesById = new Map(categoriesSeed.map((category) => [category.id, category]));
 
-	if (!Array.isArray(normalized.transactions)) {
-		normalized.transactions = [];
+	if (Array.isArray(normalized.transactions)) {
+		delete normalized.transactions;
+		changed = true;
+	}
+	if (!Array.isArray(normalized.categories)) {
+		normalized.categories = [];
 		changed = true;
 	} else {
-		const sanitizedTransactions = normalized.transactions
-			.map((transaction) => normalizeTransaction(transaction, categoriesById))
-			.filter((transaction) => transaction !== null);
-		if (
-			sanitizedTransactions.length !== normalized.transactions.length ||
-			sanitizedTransactions.some(
-				(transaction, index) => (
-					transaction.category_path !== normalized.transactions[index]?.category_path ||
-					Object.hasOwn(normalized.transactions[index] ?? {}, 'category') ||
-					Object.hasOwn(normalized.transactions[index] ?? {}, 'category_id') ||
-					Object.hasOwn(normalized.transactions[index] ?? {}, 'category_hint')
-				)
-			)
-		) {
+		const sanitizedCategoryRows = normalized.categories
+			.map(normalizeCategory)
+			.filter((category) => category !== null);
+		if (sanitizedCategoryRows.length !== normalized.categories.length) {
 			changed = true;
 		}
-		normalized.transactions = sanitizedTransactions;
-	}
-
-	const derivedCategories = deriveCategoriesFromTransactions(normalized.transactions);
-	if (
-		!Array.isArray(normalized.categories) ||
-		JSON.stringify(derivedCategories) !== JSON.stringify(normalized.categories)
-	) {
-		normalized.categories = derivedCategories;
-		changed = true;
+		normalized.categories = sanitizedCategoryRows;
 	}
 
 	if (!Array.isArray(normalized.user_activity)) {
@@ -335,7 +320,6 @@ function createDatabase(user) {
 		users: [user],
 		accounts: [],
 		categories: [],
-		transactions: [],
 		user_activity: []
 	};
 }
@@ -347,26 +331,7 @@ export async function loadOrInitDatabase() {
 		const raw = await fs.readFile(DB_PATH, 'utf8');
 		const parsed = JSON.parse(raw);
 		const {normalized, changed} = normalizeDatabaseShape(parsed);
-		const hasOnlyDefaultCategory = Array.isArray(normalized.categories) &&
-			normalized.categories.length === 1 &&
-			String(normalized.categories[0]?.id ?? '').toLowerCase() === DEFAULT_CATEGORY_ID;
-		const shouldClearEmbeddedCollections = (
-			Array.isArray(normalized.transactions) &&
-			normalized.transactions.length > 0
-		) || (
-			Array.isArray(normalized.categories) &&
-			normalized.categories.length > 0 &&
-			!hasOnlyDefaultCategory
-		);
-		if (shouldClearEmbeddedCollections) {
-			normalized.transactions = [];
-			normalized.categories = [];
-			normalized.meta = {
-				...normalized.meta,
-				updated_at: new Date().toISOString()
-			};
-		}
-		if (changed || shouldClearEmbeddedCollections) {
+		if (changed) {
 			await fs.writeFile(DB_PATH, JSON.stringify(normalized, null, 2), 'utf8');
 		}
 		const sqliteData = await sqliteAdapter.loadDatabase();
@@ -757,8 +722,6 @@ export async function importTransactionsToDatabase({institutionId, transactions,
 		};
 	});
 
-	normalized.transactions = [];
-	normalized.categories = [];
 	institution.updated_at = now;
 	normalized.meta = {
 		...normalized.meta,
@@ -802,8 +765,6 @@ export async function updateTransactionCategoryInDatabase({transactionId, catego
 		};
 	});
 
-	normalized.transactions = [];
-	normalized.categories = [];
 	normalized.meta = {
 		...normalized.meta,
 		updated_at: now
