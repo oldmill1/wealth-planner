@@ -4,6 +4,7 @@ import {Box, Text, useApp, useInput, useStdout} from 'ink';
 import {AddCreditAccountModal} from './components/AddCreditAccountModal.jsx';
 import {AddInstitutionModal} from './components/AddInstitutionModal.jsx';
 import {AddTransactionsModal} from './components/AddTransactionsModal.jsx';
+import {EditTransactionCategoryModal} from './components/EditTransactionCategoryModal.jsx';
 import {DEFAULT_TIMEZONE, TABS} from './constants.js';
 import {BottomBar} from './components/BottomBar.jsx';
 import {Dashboard, deriveDashboardTransactionView} from './components/Dashboard.jsx';
@@ -16,7 +17,8 @@ import {
 	loadOrInitDatabase,
 	isValidTimezone,
 	previewTransactionsCsvImport,
-	saveFirstUser
+	saveFirstUser,
+	updateTransactionCategoryInDatabase
 } from './services/database.js';
 import {categorizeTransactionsInBatches} from './services/ai/categorizeTransactions.js';
 import {executeCommand, loadOrInitCommandRegistry} from './services/commands.js';
@@ -364,6 +366,10 @@ export function App() {
 	const [showRemainingTransactions, setShowRemainingTransactions] = useState(false);
 	const [isTransactionFocusMode, setIsTransactionFocusMode] = useState(false);
 	const [focusedTransactionIndex, setFocusedTransactionIndex] = useState(0);
+	const [isEditTransactionCategoryModalOpen, setIsEditTransactionCategoryModalOpen] = useState(false);
+	const [editTransactionCategoryInput, setEditTransactionCategoryInput] = useState('');
+	const [editingTransaction, setEditingTransaction] = useState(null);
+	const [isSavingTransactionCategory, setIsSavingTransactionCategory] = useState(false);
 	const [currentTab, setCurrentTab] = useState('Home');
 	const [accountRows, setAccountRows] = useState([]);
 	const [isAddInstitutionModalOpen, setIsAddInstitutionModalOpen] = useState(false);
@@ -459,6 +465,10 @@ export function App() {
 	useEffect(() => {
 		setIsTransactionFocusMode(false);
 		setFocusedTransactionIndex(0);
+		setIsEditTransactionCategoryModalOpen(false);
+		setEditTransactionCategoryInput('');
+		setEditingTransaction(null);
+		setIsSavingTransactionCategory(false);
 	}, [currentTab]);
 
 	useEffect(() => {
@@ -517,6 +527,68 @@ export function App() {
 	useInput((input, key) => {
 		if (key.ctrl && input === 'c') {
 			exit();
+			return;
+		}
+
+		if (isEditTransactionCategoryModalOpen) {
+			if (key.escape) {
+				setIsEditTransactionCategoryModalOpen(false);
+				setEditTransactionCategoryInput('');
+				setEditingTransaction(null);
+				setIsSavingTransactionCategory(false);
+				return;
+			}
+
+			if (key.return) {
+				const trimmedCategoryPath = editTransactionCategoryInput.trim();
+				if (!trimmedCategoryPath) {
+					setCommandMessage('Category is required.');
+					return;
+				}
+				if (!editingTransaction?.id) {
+					setCommandMessage('No transaction selected.');
+					setIsEditTransactionCategoryModalOpen(false);
+					setEditTransactionCategoryInput('');
+					setEditingTransaction(null);
+					return;
+				}
+
+				setIsSavingTransactionCategory(true);
+				updateTransactionCategoryInDatabase({
+					transactionId: editingTransaction.id,
+					categoryPath: trimmedCategoryPath
+				})
+					.then((result) => {
+						const updatedTransaction = result?.transaction ?? null;
+						if (!updatedTransaction) {
+							throw new Error('Updated transaction missing from response.');
+						}
+						setTransactions((prev) => prev.map((item) => (
+							item.id === updatedTransaction.id ? updatedTransaction : item
+						)));
+						setCategories(result?.categories ?? []);
+						setCommandMessage('Transaction category updated.');
+						setIsEditTransactionCategoryModalOpen(false);
+						setEditTransactionCategoryInput('');
+						setEditingTransaction(null);
+					})
+					.catch((error) => {
+						setCommandMessage(`Failed to update category: ${error.message}`);
+					})
+					.finally(() => {
+						setIsSavingTransactionCategory(false);
+					});
+				return;
+			}
+
+			if (key.backspace || key.delete) {
+				setEditTransactionCategoryInput((prev) => prev.slice(0, -1));
+				return;
+			}
+
+			if (!key.ctrl && !key.meta && input && input !== '\t') {
+				setEditTransactionCategoryInput((prev) => prev + input);
+			}
 			return;
 		}
 
@@ -1010,18 +1082,27 @@ export function App() {
 			return;
 		}
 
-		if (bootState === 'ready') {
-			if ((currentTab === 'Balances' || currentTab === 'Credit') && key.return) {
-				if (!transactionFocusContext.hasFocusableTransactions) {
-					setCommandMessage('No transactions to select.');
+			if (bootState === 'ready') {
+				if ((currentTab === 'Balances' || currentTab === 'Credit') && key.return) {
+					if (!transactionFocusContext.hasFocusableTransactions) {
+						setCommandMessage('No transactions to select.');
+						return;
+					}
+					if (!isTransactionFocusMode) {
+						setIsTransactionFocusMode(true);
+						setFocusedTransactionIndex(0);
+					} else {
+						const selectedTransaction = transactionFocusContext.visibleTransactionRows[focusedTransactionIndex] ?? null;
+						if (!selectedTransaction) {
+							setCommandMessage('No transaction selected.');
+							return;
+						}
+						setEditingTransaction(selectedTransaction);
+						setEditTransactionCategoryInput(selectedTransaction.category_path || 'Uncategorized');
+						setIsEditTransactionCategoryModalOpen(true);
+					}
 					return;
 				}
-				if (!isTransactionFocusMode) {
-					setIsTransactionFocusMode(true);
-					setFocusedTransactionIndex(0);
-				}
-				return;
-			}
 
 			if ((currentTab === 'Balances' || currentTab === 'Credit') && isTransactionFocusMode && key.escape) {
 				setIsTransactionFocusMode(false);
@@ -1330,8 +1411,8 @@ export function App() {
 				justifyContent={currentTab === 'Balances' || currentTab === 'Credit' ? 'flex-start' : 'center'}
 				alignItems={currentTab === 'Balances' || currentTab === 'Credit' ? 'stretch' : 'center'}
 			>
-				{content}
-				{isAddInstitutionModalOpen && (
+				{!isEditTransactionCategoryModalOpen && content}
+				{!isEditTransactionCategoryModalOpen && isAddInstitutionModalOpen && (
 					<AddInstitutionModal
 						nameInput={addInstitutionNameInput}
 						typeInput={addInstitutionTypeInput}
@@ -1339,7 +1420,7 @@ export function App() {
 						isSaving={isCreatingInstitution}
 					/>
 				)}
-				{isAddCreditAccountModalOpen && (
+				{!isEditTransactionCategoryModalOpen && isAddCreditAccountModalOpen && (
 					<AddCreditAccountModal
 						institutionInput={creditInstitutionNameInput}
 						lastFourInput={creditLastFourInput}
@@ -1347,7 +1428,7 @@ export function App() {
 						isSaving={isCreatingCreditAccount}
 					/>
 				)}
-				{isAddTransactionsModalOpen && (
+				{!isEditTransactionCategoryModalOpen && isAddTransactionsModalOpen && (
 					<AddTransactionsModal
 						institutions={transactionInstitutionRows}
 						selectedInstitutionIndex={transactionInstitutionIndex}
@@ -1356,6 +1437,15 @@ export function App() {
 						preview={transactionPreview}
 						isBusy={isImportingTransactions}
 					/>
+				)}
+				{isEditTransactionCategoryModalOpen && (
+					<Box width="100%" flexGrow={1} justifyContent="center" alignItems="center">
+						<EditTransactionCategoryModal
+							transaction={editingTransaction}
+							categoryInput={editTransactionCategoryInput}
+							isSaving={isSavingTransactionCategory}
+						/>
+					</Box>
 				)}
 			</Box>
 			<BottomBar

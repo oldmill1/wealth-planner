@@ -745,6 +745,45 @@ export async function importTransactionsToDatabase({institutionId, transactions,
 	};
 }
 
+export async function updateTransactionCategoryInDatabase({transactionId, categoryPath}) {
+	const trimmedTransactionId = String(transactionId ?? '').trim();
+	if (!trimmedTransactionId) {
+		throw new Error('Transaction id is required.');
+	}
+
+	const raw = await fs.readFile(DB_PATH, 'utf8');
+	const parsed = JSON.parse(raw);
+	const {normalized} = normalizeDatabaseShape(parsed);
+	const now = new Date().toISOString();
+	const targetIndex = (normalized.transactions ?? []).findIndex((item) => item?.id === trimmedTransactionId);
+
+	if (targetIndex === -1) {
+		throw new Error('Transaction not found.');
+	}
+
+	const updatedTransaction = normalizeTransaction({
+		...normalized.transactions[targetIndex],
+		category_path: categoryPath,
+		updated_at: now
+	});
+	if (!updatedTransaction) {
+		throw new Error('Failed to normalize updated transaction.');
+	}
+
+	normalized.transactions[targetIndex] = updatedTransaction;
+	normalized.categories = deriveCategoriesFromTransactions(normalized.transactions);
+	normalized.meta = {
+		...normalized.meta,
+		updated_at: now
+	};
+
+	await fs.writeFile(DB_PATH, JSON.stringify(normalized, null, 2), 'utf8');
+	return {
+		transaction: updatedTransaction,
+		categories: normalized.categories ?? []
+	};
+}
+
 export function isValidTimezone(timezone) {
 	try {
 		new Intl.DateTimeFormat('en-US', {timeZone: timezone});
