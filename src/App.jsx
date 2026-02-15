@@ -940,6 +940,9 @@ export function App() {
 							const nowIso = new Date().toISOString();
 							setTransactions((prev) => [...prev, ...transactionPreview.transactions]);
 							setCategories((prev) => mergeCategories(prev, result.categories ?? []));
+							setUserActivities((prev) => (
+								result.activity ? [result.activity, ...prev] : prev
+							));
 							setAccountRows((prev) => prev.map((item) => (
 								item.id === selectedInstitution.id
 									? {...item, updatedAt: nowIso, lastUpdated: formatLastUpdated(nowIso)}

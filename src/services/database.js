@@ -129,11 +129,44 @@ function normalizeUserActivity(record) {
 		return null;
 	}
 
+	const normalizedType = typeof record.type === 'string'
+		? String(record.type).trim()
+		: '';
+	const metadata = record.metadata && typeof record.metadata === 'object'
+		? record.metadata
+		: null;
+	const normalizedMetadata = metadata
+		? {
+			...(typeof metadata.institution_id === 'string' && metadata.institution_id.trim()
+				? {institution_id: metadata.institution_id.trim()}
+				: {}),
+			...(typeof metadata.institution_name === 'string' && metadata.institution_name.trim()
+				? {institution_name: metadata.institution_name.trim()}
+				: {}),
+			...(typeof metadata.date_from === 'string' && metadata.date_from.trim()
+				? {date_from: metadata.date_from.trim()}
+				: {}),
+			...(typeof metadata.date_to === 'string' && metadata.date_to.trim()
+				? {date_to: metadata.date_to.trim()}
+				: {}),
+			...(Number.isFinite(Number(metadata.transaction_count))
+				? {transaction_count: Number(metadata.transaction_count)}
+				: {}),
+			...(typeof metadata.file_name === 'string' && metadata.file_name.trim()
+				? {file_name: metadata.file_name.trim()}
+				: {})
+		}
+		: null;
+
 	return {
 		id: record.id,
 		user_id: record.user_id,
 		datetime: record.datetime,
-		message: record.message
+		message: record.message,
+		...(normalizedType ? {type: normalizedType} : {}),
+		...(normalizedMetadata && Object.keys(normalizedMetadata).length > 0
+			? {metadata: normalizedMetadata}
+			: {})
 	};
 }
 
@@ -930,6 +963,37 @@ export async function importTransactionsToDatabase({institutionId, transactions,
 			};
 		})
 		.filter((transaction) => transaction !== null);
+	const postedDates = normalizedIncomingTransactions
+		.map((transaction) => String(transaction.posted_at ?? '').trim())
+		.filter(Boolean)
+		.sort();
+	const sourceFileNames = [...new Set(
+		normalizedIncomingTransactions
+			.map((transaction) => String(transaction?.source?.file_name ?? '').trim())
+			.filter(Boolean)
+	)];
+	const importFileName = sourceFileNames.length === 1
+		? sourceFileNames[0]
+		: sourceFileNames.length === 0
+			? 'unknown.csv'
+			: 'multiple-files.csv';
+	const dateFrom = postedDates[0] ?? '';
+	const dateTo = postedDates[postedDates.length - 1] ?? '';
+	const activityRecord = {
+		id: crypto.randomUUID(),
+		user_id: institution.user_id,
+		datetime: now,
+		type: 'CSV_IMPORT',
+		message: `Imported ${normalizedIncomingTransactions.length} transactions into ${institution.name} (${dateFrom} to ${dateTo}) from ${importFileName}`,
+		metadata: {
+			institution_id: institution.id,
+			institution_name: institution.name,
+			date_from: dateFrom,
+			date_to: dateTo,
+			transaction_count: normalizedIncomingTransactions.length,
+			file_name: importFileName
+		}
+	};
 
 	const sqliteWriteResult = sqliteAdapter.runInTransaction((ctx) => {
 		ctx.insertTransactions(normalizedIncomingTransactions);
@@ -942,6 +1006,7 @@ export async function importTransactionsToDatabase({institutionId, transactions,
 	});
 
 	institution.updated_at = now;
+	normalized.user_activity = [...(normalized.user_activity ?? []), activityRecord];
 	normalized.meta = {
 		...normalized.meta,
 		updated_at: now
@@ -951,7 +1016,8 @@ export async function importTransactionsToDatabase({institutionId, transactions,
 	return {
 		count: normalizedIncomingTransactions.length,
 		categories: sqliteWriteResult.categories ?? [],
-		institutionName: institution.name
+		institutionName: institution.name,
+		activity: activityRecord
 	};
 }
 

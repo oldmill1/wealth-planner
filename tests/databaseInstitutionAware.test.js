@@ -62,12 +62,32 @@ test('import assigns selected institution_id and rejects user mismatch', {concur
 		});
 		assert.equal(importResult.count, 1);
 		assert.equal(importResult.institutionName, bank.name);
+		assert.ok(importResult.activity);
+		assert.equal(importResult.activity.type, 'CSV_IMPORT');
+		assert.equal(importResult.activity.metadata.institution_id, bank.id);
+		assert.equal(importResult.activity.metadata.institution_name, bank.name);
+		assert.equal(importResult.activity.metadata.date_from, '2026-02-01');
+		assert.equal(importResult.activity.metadata.date_to, '2026-02-01');
+		assert.equal(importResult.activity.metadata.transaction_count, 1);
+		assert.equal(importResult.activity.metadata.file_name, 'unknown.csv');
+		assert.match(
+			importResult.activity.message,
+			new RegExp(`^Imported 1 transactions into ${bank.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\(2026-02-01 to 2026-02-01\\) from unknown\\.csv$`)
+		);
 
 		step = 'load';
 		const loaded = await loadOrInitDatabase();
 		const saved = loaded.transactions.find((item) => item.id === 'tx_import_1');
 		assert.ok(saved);
 		assert.equal(saved.institution_id, bank.id);
+		const csvImportActivity = loaded.userActivity.find((item) => item.type === 'CSV_IMPORT');
+		assert.ok(csvImportActivity);
+		assert.equal(csvImportActivity.metadata.institution_id, bank.id);
+		assert.equal(csvImportActivity.metadata.institution_name, bank.name);
+		assert.equal(csvImportActivity.metadata.date_from, '2026-02-01');
+		assert.equal(csvImportActivity.metadata.date_to, '2026-02-01');
+		assert.equal(csvImportActivity.metadata.transaction_count, 1);
+		assert.equal(csvImportActivity.metadata.file_name, 'unknown.csv');
 
 		step = 'import bad';
 		await assert.rejects(
@@ -95,6 +115,97 @@ test('import assigns selected institution_id and rejects user mismatch', {concur
 		error.message = `${step}: ${error.message}`;
 		throw error;
 	}
+});
+
+test('import activity keeps legacy entries untouched and appends structured metadata only for new imports', {concurrency: false}, async () => {
+	await resetConfigDir();
+	const now = '2026-02-01T00:00:00.000Z';
+	const userId = 'user_legacy_1';
+	const institutionId = 'acc_legacy_1';
+	const legacyActivityId = 'activity_legacy_1';
+	const seedJson = {
+		meta: {version: 1, created_at: now, updated_at: now},
+		users: [{id: userId, name: 'Tester', timezone: 'America/New_York', created_at: now, updated_at: now}],
+		accounts: [{
+			id: institutionId,
+			user_id: userId,
+			type: 'BANK',
+			name: 'Legacy Bank',
+			aliases: {nickname: 'Legacy'},
+			created_at: now,
+			updated_at: now
+		}],
+		categories: [],
+		user_activity: [{
+			id: legacyActivityId,
+			user_id: userId,
+			datetime: now,
+			message: 'Legacy message only'
+		}]
+	};
+	await fs.writeFile(DB_PATH, JSON.stringify(seedJson, null, 2), 'utf8');
+
+	const importResult = await importTransactionsToDatabase({
+		institutionId,
+		transactions: [
+			{
+				id: 'tx_import_activity_1',
+				user_id: userId,
+				institution_id: institutionId,
+				posted_at: '2026-02-03',
+				description_raw: 'Groceries',
+				amount_cents: -1234,
+				category_path: 'Food',
+				currency: 'CAD',
+				direction: 'DEBIT',
+				source: {
+					type: 'csv',
+					file_name: 'sample.csv'
+				},
+				created_at: now,
+				updated_at: now
+			},
+			{
+				id: 'tx_import_activity_2',
+				user_id: userId,
+				institution_id: institutionId,
+				posted_at: '2026-02-05',
+				description_raw: 'Coffee',
+				amount_cents: -500,
+				category_path: 'Food',
+				currency: 'CAD',
+				direction: 'DEBIT',
+				source: {
+					type: 'csv',
+					file_name: 'sample.csv'
+				},
+				created_at: now,
+				updated_at: now
+			}
+		]
+	});
+	assert.equal(importResult.count, 2);
+	assert.ok(importResult.activity);
+	assert.equal(importResult.activity.metadata.file_name, 'sample.csv');
+	assert.equal(importResult.activity.metadata.date_from, '2026-02-03');
+	assert.equal(importResult.activity.metadata.date_to, '2026-02-05');
+	assert.equal(importResult.activity.metadata.transaction_count, 2);
+
+	const loaded = await loadOrInitDatabase();
+	const legacy = loaded.userActivity.find((item) => item.id === legacyActivityId);
+	assert.ok(legacy);
+	assert.equal(legacy.message, 'Legacy message only');
+	assert.equal(Object.hasOwn(legacy, 'type'), false);
+	assert.equal(Object.hasOwn(legacy, 'metadata'), false);
+
+	const imports = loaded.userActivity.filter((item) => item.type === 'CSV_IMPORT');
+	assert.equal(imports.length, 1);
+	assert.equal(imports[0].metadata.institution_id, institutionId);
+	assert.equal(imports[0].metadata.institution_name, 'Legacy Bank');
+	assert.equal(imports[0].metadata.date_from, '2026-02-03');
+	assert.equal(imports[0].metadata.date_to, '2026-02-05');
+	assert.equal(imports[0].metadata.transaction_count, 2);
+	assert.equal(imports[0].metadata.file_name, 'sample.csv');
 });
 
 test('loadOrInitDatabase migrates orphan transactions and returns skip warning', {concurrency: false}, async () => {
