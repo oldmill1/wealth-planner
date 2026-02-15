@@ -38,9 +38,7 @@ export function isValidInstitution(record) {
 		typeof record.name === 'string' &&
 		typeof record.user_id === 'string' &&
 		typeof record.created_at === 'string' &&
-		typeof record.updated_at === 'string' &&
-		Array.isArray(record.transaction_ids) &&
-		record.transaction_ids.every((id) => typeof id === 'string')
+		typeof record.updated_at === 'string'
 	);
 }
 
@@ -49,14 +47,12 @@ function normalizeInstitution(record) {
 		return null;
 	}
 
-	const transactionIds = Array.isArray(record.transaction_ids)
-		? record.transaction_ids.filter((id) => typeof id === 'string')
-		: [];
-
 	const normalized = {
-		...record,
-		transaction_ids: transactionIds
+		...record
 	};
+	if (Object.hasOwn(normalized, 'transaction_ids')) {
+		delete normalized.transaction_ids;
+	}
 
 	return isValidInstitution(normalized) ? normalized : null;
 }
@@ -419,7 +415,6 @@ export async function addInstitutionForUser({userId, name, type = 'BANK'}) {
 		user_id: userId,
 		type,
 		name: trimmedName,
-		transaction_ids: [],
 		created_at: now,
 		updated_at: now
 	};
@@ -764,10 +759,6 @@ export async function importTransactionsToDatabase({institutionId, transactions,
 
 	normalized.transactions = [];
 	normalized.categories = [];
-	institution.transaction_ids = [
-		...(institution.transaction_ids ?? []),
-		...normalizedIncomingTransactions.map((item) => item.id)
-	];
 	institution.updated_at = now;
 	normalized.meta = {
 		...normalized.meta,
