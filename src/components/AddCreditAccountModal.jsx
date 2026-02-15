@@ -11,7 +11,7 @@ export function AddCreditAccountModal({institutionInput, lastFourInput, step, is
 			: 'Enter = Create, Esc = Cancel';
 
 	return (
-		<Box width="100%" justifyContent="center" alignItems="center" marginTop={1}>
+		<Box width="100%" justifyContent="center" alignItems="center">
 			<Box
 				flexDirection="column"
 				borderStyle="round"

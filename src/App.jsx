@@ -1395,6 +1395,12 @@ export function App() {
 				: 'No transactions to select.'
 		)
 		: commandMessage;
+	const isOverlayModalOpen = (
+		isEditTransactionCategoryModalOpen ||
+		isAddInstitutionModalOpen ||
+		isAddCreditAccountModalOpen ||
+		isAddTransactionsModalOpen
+	);
 
 	return (
 		<Box
@@ -1411,40 +1417,42 @@ export function App() {
 				justifyContent={currentTab === 'Balances' || currentTab === 'Credit' ? 'flex-start' : 'center'}
 				alignItems={currentTab === 'Balances' || currentTab === 'Credit' ? 'stretch' : 'center'}
 			>
-				{!isEditTransactionCategoryModalOpen && content}
-				{!isEditTransactionCategoryModalOpen && isAddInstitutionModalOpen && (
-					<AddInstitutionModal
-						nameInput={addInstitutionNameInput}
-						typeInput={addInstitutionTypeInput}
-						step={addInstitutionStep}
-						isSaving={isCreatingInstitution}
-					/>
-				)}
-				{!isEditTransactionCategoryModalOpen && isAddCreditAccountModalOpen && (
-					<AddCreditAccountModal
-						institutionInput={creditInstitutionNameInput}
-						lastFourInput={creditLastFourInput}
-						step={creditAccountStep}
-						isSaving={isCreatingCreditAccount}
-					/>
-				)}
-				{!isEditTransactionCategoryModalOpen && isAddTransactionsModalOpen && (
-					<AddTransactionsModal
-						institutions={transactionInstitutionRows}
-						selectedInstitutionIndex={transactionInstitutionIndex}
-						csvPathInput={transactionCsvPathInput}
-						step={transactionImportStep}
-						preview={transactionPreview}
-						isBusy={isImportingTransactions}
-					/>
-				)}
-				{isEditTransactionCategoryModalOpen && (
+				{!isOverlayModalOpen && content}
+				{isOverlayModalOpen && (
 					<Box width="100%" flexGrow={1} justifyContent="center" alignItems="center">
-						<EditTransactionCategoryModal
-							transaction={editingTransaction}
-							categoryInput={editTransactionCategoryInput}
-							isSaving={isSavingTransactionCategory}
-						/>
+						{isEditTransactionCategoryModalOpen && (
+							<EditTransactionCategoryModal
+								transaction={editingTransaction}
+								categoryInput={editTransactionCategoryInput}
+								isSaving={isSavingTransactionCategory}
+							/>
+						)}
+						{!isEditTransactionCategoryModalOpen && isAddInstitutionModalOpen && (
+							<AddInstitutionModal
+								nameInput={addInstitutionNameInput}
+								typeInput={addInstitutionTypeInput}
+								step={addInstitutionStep}
+								isSaving={isCreatingInstitution}
+							/>
+						)}
+						{!isEditTransactionCategoryModalOpen && !isAddInstitutionModalOpen && isAddCreditAccountModalOpen && (
+							<AddCreditAccountModal
+								institutionInput={creditInstitutionNameInput}
+								lastFourInput={creditLastFourInput}
+								step={creditAccountStep}
+								isSaving={isCreatingCreditAccount}
+							/>
+						)}
+						{!isEditTransactionCategoryModalOpen && !isAddInstitutionModalOpen && !isAddCreditAccountModalOpen && isAddTransactionsModalOpen && (
+							<AddTransactionsModal
+								institutions={transactionInstitutionRows}
+								selectedInstitutionIndex={transactionInstitutionIndex}
+								csvPathInput={transactionCsvPathInput}
+								step={transactionImportStep}
+								preview={transactionPreview}
+								isBusy={isImportingTransactions}
+							/>
+						)}
 					</Box>
 				)}
 			</Box>

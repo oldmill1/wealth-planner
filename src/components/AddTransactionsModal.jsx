@@ -12,7 +12,7 @@ export function AddTransactionsModal({
 	const selectedInstitution = institutions[selectedInstitutionIndex] ?? null;
 
 	return (
-		<Box width="100%" justifyContent="center" alignItems="center" marginTop={1}>
+		<Box width="100%" justifyContent="center" alignItems="center">
 			<Box
 				flexDirection="column"
 				borderStyle="round"
