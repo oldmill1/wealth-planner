@@ -1528,40 +1528,29 @@ export function App() {
 			if (!tableState) {
 				return null;
 			}
-			const availableWidth = Math.max(81, terminalWidth - 4);
-			const panelGap = 1;
-			let sidebarWidth = Math.max(24, Math.floor(availableWidth * 0.3));
-			const maxSidebarWidth = Math.max(24, availableWidth - 56 - panelGap);
-			if (sidebarWidth > maxSidebarWidth) {
-				sidebarWidth = maxSidebarWidth;
-			}
-			const contentWidth = Math.max(56, availableWidth - sidebarWidth - panelGap);
+			const contentWidth = Math.max(56, terminalWidth - 4);
 
 			return (
 				<>
-					<Box width="100%" paddingX={2} flexDirection="row">
-						<Box width={contentWidth}>
-							<Dashboard
-								terminalWidth={contentWidth}
-								terminalHeight={terminalHeight}
-								accountRows={tableState.tableRows}
-								transactionRows={tableState.displayTransactions}
-								visibleTransactionRows={transactionFocusContext.visibleTransactionRows}
-								transactionsSectionTitle={tableState.transactionsSectionTitle}
-								transactionPageIndex={transactionPageIndex}
-								isTransactionFocusMode={isTransactionFocusMode}
-								focusedTransactionIndex={focusedTransactionIndex}
-								searchLabel={tableState.searchLabel}
-								summaryLabel={tableState.summaryLabel}
-								hasBalances={hasBalances}
-								hasCredits={hasCredits}
-								cashFlow30d={tableState.cashFlow30d}
-								leftPaneRatio={1}
-								showSpendInsights={false}
-							/>
-						</Box>
-						<Box width={1} />
-						<HomeActivityFeed activities={feedItems} width={sidebarWidth} />
+					<Box width="100%" paddingX={2}>
+						<Dashboard
+							terminalWidth={contentWidth}
+							terminalHeight={terminalHeight}
+							accountRows={tableState.tableRows}
+							transactionRows={tableState.displayTransactions}
+							visibleTransactionRows={transactionFocusContext.visibleTransactionRows}
+							transactionsSectionTitle={tableState.transactionsSectionTitle}
+							transactionPageIndex={transactionPageIndex}
+							isTransactionFocusMode={isTransactionFocusMode}
+							focusedTransactionIndex={focusedTransactionIndex}
+							searchLabel={tableState.searchLabel}
+							summaryLabel={tableState.summaryLabel}
+							hasBalances={hasBalances}
+							hasCredits={hasCredits}
+							cashFlow30d={tableState.cashFlow30d}
+							leftPaneRatio={1}
+							showSpendInsights={false}
+						/>
 					</Box>
 				</>
 			);
@@ -1572,40 +1561,29 @@ export function App() {
 			if (!tableState) {
 				return null;
 			}
-			const availableWidth = Math.max(81, terminalWidth - 4);
-			const panelGap = 1;
-			let sidebarWidth = Math.max(24, Math.floor(availableWidth * 0.3));
-			const maxSidebarWidth = Math.max(24, availableWidth - 56 - panelGap);
-			if (sidebarWidth > maxSidebarWidth) {
-				sidebarWidth = maxSidebarWidth;
-			}
-			const contentWidth = Math.max(56, availableWidth - sidebarWidth - panelGap);
+			const contentWidth = Math.max(56, terminalWidth - 4);
 
 			return (
 				<>
-					<Box width="100%" paddingX={2} flexDirection="row">
-						<Box width={contentWidth}>
-							<Dashboard
-								terminalWidth={contentWidth}
-								terminalHeight={terminalHeight}
-								accountRows={tableState.tableRows}
-								transactionRows={tableState.displayTransactions}
-								visibleTransactionRows={transactionFocusContext.visibleTransactionRows}
-								transactionsSectionTitle={tableState.transactionsSectionTitle}
-								transactionPageIndex={transactionPageIndex}
-								isTransactionFocusMode={isTransactionFocusMode}
-								focusedTransactionIndex={focusedTransactionIndex}
-								searchLabel={tableState.searchLabel}
-								summaryLabel={tableState.summaryLabel}
-								hasBalances={hasBalances}
-								hasCredits={hasCredits}
-								leftPaneRatio={1}
-								spendInsights={creditSpendInsights}
-								showSpendInsights={Boolean(ENABLE_SPEND_INSIGHTS)}
-							/>
-						</Box>
-						<Box width={1} />
-						<HomeActivityFeed activities={feedItems} width={sidebarWidth} />
+					<Box width="100%" paddingX={2}>
+						<Dashboard
+							terminalWidth={contentWidth}
+							terminalHeight={terminalHeight}
+							accountRows={tableState.tableRows}
+							transactionRows={tableState.displayTransactions}
+							visibleTransactionRows={transactionFocusContext.visibleTransactionRows}
+							transactionsSectionTitle={tableState.transactionsSectionTitle}
+							transactionPageIndex={transactionPageIndex}
+							isTransactionFocusMode={isTransactionFocusMode}
+							focusedTransactionIndex={focusedTransactionIndex}
+							searchLabel={tableState.searchLabel}
+							summaryLabel={tableState.summaryLabel}
+							hasBalances={hasBalances}
+							hasCredits={hasCredits}
+							leftPaneRatio={1}
+							spendInsights={creditSpendInsights}
+							showSpendInsights={Boolean(ENABLE_SPEND_INSIGHTS)}
+						/>
 					</Box>
 				</>
 			);
