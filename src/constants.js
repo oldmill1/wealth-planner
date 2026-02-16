@@ -2,7 +2,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 function isNodeTestProcess() {
-	return process.argv.some((arg) => arg === '--test' || arg.startsWith('--test-'));
+	return process.argv.some((arg) => arg === '--test');
 }
 
 function resolveConfigDir() {
