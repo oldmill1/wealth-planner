@@ -11,6 +11,7 @@ import {Dashboard, deriveDashboardTransactionView} from './components/Dashboard.
 import {HomeActivityFeed} from './components/HomeActivityFeed.jsx';
 import {HomeOverviewPanel} from './components/HomeOverviewPanel.jsx';
 import {Tabs} from './components/Tabs.jsx';
+import {buildSpendInsights} from './services/analytics/spendInsights.js';
 import {
 	addInstitutionForUser,
 	importTransactionsToDatabase,
@@ -99,6 +100,7 @@ const TAB_COMMANDS = {
 	Credit: ['add_credit_account', 'upload_csv', 'switch', 'search', 'clear']
 };
 const RECENT_TRANSACTIONS_LIMIT = 20;
+const ENABLE_SPEND_INSIGHTS = true;
 
 function getCommandNameFromInput(rawInput) {
 	const raw = String(rawInput ?? '').trim().replace(/^\/+/, '');
@@ -455,6 +457,39 @@ export function App() {
 			institutionFilterByTab
 		})
 	), [currentTab, accountRows, transactions, activeTransactionFilter, user?.id, user?.timezone, institutionFilterByTab]);
+	const homeCreditInstitutionIds = useMemo(() => (
+		accountRows
+			.filter((row) => row.userId === user?.id)
+			.filter((row) => row.type === 'CREDIT' || row.type === 'CREDIT_CARD')
+			.map((row) => row.id)
+	), [accountRows, user?.id]);
+	const homeSpendInsights = useMemo(() => {
+		if (!ENABLE_SPEND_INSIGHTS || !user?.id || homeCreditInstitutionIds.length === 0) {
+			return null;
+		}
+		return buildSpendInsights({
+			transactions,
+			userId: user.id,
+			institutionIds: homeCreditInstitutionIds
+		});
+	}, [transactions, user?.id, homeCreditInstitutionIds]);
+	const creditSpendInsights = useMemo(() => {
+		if (!ENABLE_SPEND_INSIGHTS || !user?.id || currentTab !== 'Credit' || !activeTabTransactionState) {
+			return null;
+		}
+		const scopedInstitutionIds = (activeTabTransactionState.tableRows ?? [])
+			.filter((row) => !row.isPlaceholder)
+			.map((row) => row.id)
+			.filter(Boolean);
+		if (scopedInstitutionIds.length === 0) {
+			return null;
+		}
+		return buildSpendInsights({
+			transactions,
+			userId: user.id,
+			institutionIds: scopedInstitutionIds
+		});
+	}, [transactions, user?.id, currentTab, activeTabTransactionState]);
 	const transactionFocusContext = useMemo(() => {
 		if (!activeTabTransactionState || bootState !== 'ready') {
 			return {visibleTransactionRows: [], hasFocusableTransactions: false};
@@ -463,13 +498,14 @@ export function App() {
 			terminalHeight,
 			accountRows: activeTabTransactionState.tableRows,
 			transactionRows: activeTabTransactionState.displayTransactions,
-			showRemainingTransactions
+			showRemainingTransactions,
+			showSpendInsights: Boolean(ENABLE_SPEND_INSIGHTS && currentTab === 'Credit')
 		});
 		return {
 			visibleTransactionRows: view.visibleTransactionRows,
 			hasFocusableTransactions: view.visibleTransactionRows.length > 0
 		};
-	}, [activeTabTransactionState, bootState, terminalHeight, showRemainingTransactions]);
+	}, [activeTabTransactionState, bootState, terminalHeight, showRemainingTransactions, currentTab]);
 
 	useEffect(() => {
 		setSelectedSuggestionIndex(0);
@@ -1399,11 +1435,19 @@ export function App() {
 				message: item.message,
 				relativeTime: formatLastUpdated(item.datetime)
 			}));
-		const latestAccountUpdatedAt = currentUserRows
-			.map((row) => row.updatedAt)
-			.filter(Boolean)
-			.sort((a, b) => String(b).localeCompare(String(a)))[0] ?? null;
-		const lastActivity = latestAccountUpdatedAt ? formatLastUpdated(latestAccountUpdatedAt) : 'none';
+		const homeTopCategory = homeSpendInsights?.topCategories?.[0] ?? null;
+		const homeMonthTrend = homeSpendInsights?.monthTrend ?? [];
+		const homeCurrentMonth = homeMonthTrend[homeMonthTrend.length - 1] ?? null;
+		const homePreviousMonth = homeMonthTrend[homeMonthTrend.length - 2] ?? null;
+		const homeRecurringTotal = (homeSpendInsights?.recurring ?? [])
+			.reduce((sum, item) => sum + (Number(item?.totalSpendCents) || 0), 0);
+		const homeInsightCard = {
+			topCategoryPath: homeTopCategory?.categoryPath ?? '',
+			topCategoryPct: Number(homeTopCategory?.pctOfSpend) || 0,
+			currentMonthSpendCents: Number(homeCurrentMonth?.spendCents) || 0,
+			previousMonthSpendCents: Number(homePreviousMonth?.spendCents) || 0,
+			recurringTotalCents: homeRecurringTotal
+		};
 
 		if (bootState === 'booting') {
 			return (
@@ -1488,6 +1532,7 @@ export function App() {
 								hasCredits={hasCredits}
 								cashFlow30d={tableState.cashFlow30d}
 								leftPaneRatio={1}
+								showSpendInsights={false}
 							/>
 						</Box>
 						<Box width={1} />
@@ -1531,6 +1576,8 @@ export function App() {
 								hasBalances={hasBalances}
 								hasCredits={hasCredits}
 								leftPaneRatio={1}
+								spendInsights={creditSpendInsights}
+								showSpendInsights={Boolean(ENABLE_SPEND_INSIGHTS)}
 							/>
 						</Box>
 						<Box width={1} />
@@ -1548,7 +1595,7 @@ export function App() {
 					depositAccounts={depositAccounts}
 					creditAccounts={creditAccounts}
 					totalTransactions={totalTransactions}
-					lastActivity={lastActivity}
+					spendInsight={homeInsightCard}
 				/>
 				<Box width={1} />
 				<HomeActivityFeed activities={feedItems} />
@@ -1570,7 +1617,9 @@ export function App() {
 		transactionFocusContext.visibleTransactionRows,
 		transactions,
 		user,
-		userActivities
+		userActivities,
+		homeSpendInsights,
+		creditSpendInsights
 	]);
 
 	const selectedFocusedTransaction = isTransactionFocusMode

@@ -8,6 +8,22 @@ function buildMeter(value, max, width = 12) {
 	return `[${'#'.repeat(filled)}${'.'.repeat(Math.max(0, width - filled))}]`;
 }
 
+function formatCurrency(amountCents) {
+	return `$${(Math.abs(Number(amountCents) || 0) / 100).toFixed(2)}`;
+}
+
+function shortenCategoryLabel(categoryPath, maxLength = 18) {
+	const safe = String(categoryPath ?? '').replace(/\s+/g, ' ').trim();
+	if (!safe) {
+		return 'No spend data';
+	}
+	const tail = safe.split('>').map((item) => item.trim()).filter(Boolean).at(-1) || safe;
+	if (tail.length <= maxLength) {
+		return tail;
+	}
+	return tail.slice(0, maxLength - 1) + '…';
+}
+
 function StatCard({title, value, accent = '#8aa0c7', subtitle = '', tone = '#171b2d', meter = null}) {
 	return (
 		<Box
@@ -33,9 +49,15 @@ export function HomeOverviewPanel({
 	depositAccounts,
 	creditAccounts,
 	totalTransactions,
-	lastActivity
+	spendInsight = null
 }) {
-	const activityTone = lastActivity === 'none' ? '#20253f' : '#1a2640';
+	const topCategoryPath = spendInsight?.topCategoryPath ?? '';
+	const topCategoryPct = Number(spendInsight?.topCategoryPct) || 0;
+	const currentMonthSpendCents = Number(spendInsight?.currentMonthSpendCents) || 0;
+	const previousMonthSpendCents = Number(spendInsight?.previousMonthSpendCents) || 0;
+	const recurringTotalCents = Number(spendInsight?.recurringTotalCents) || 0;
+	const insightLabel = topCategoryPath ? `Top: ${shortenCategoryLabel(topCategoryPath)}` : 'Top: No spend data';
+	const insightSubtitle = `${formatCurrency(currentMonthSpendCents)} vs ${formatCurrency(previousMonthSpendCents)} | Recurring ${formatCurrency(recurringTotalCents)}`;
 
 	return (
 		<Box width={84} flexDirection="column" borderStyle="round" borderColor="#3a4779" backgroundColor="#12162a" paddingX={2} paddingY={1}>
@@ -81,11 +103,12 @@ export function HomeOverviewPanel({
 				/>
 				<Box width={1} />
 				<StatCard
-					title="Latest Activity"
-					value={lastActivity}
-					accent="#9ca4d8"
-					tone={activityTone}
-					subtitle="Most recent account update"
+					title="Spend Insight"
+					value={insightLabel}
+					accent="#a7b6ef"
+					tone="#1a2640"
+					meter={buildMeter(Math.round(topCategoryPct), 100)}
+					subtitle={insightSubtitle}
 				/>
 			</Box>
 			<Text color="#2f3a67">{"=".repeat(78)}</Text>

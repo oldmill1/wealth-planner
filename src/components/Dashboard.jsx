@@ -156,12 +156,14 @@ export function deriveDashboardTransactionView({
 	terminalHeight,
 	accountRows,
 	transactionRows,
-	showRemainingTransactions = false
+	showRemainingTransactions = false,
+	showSpendInsights = false
 }) {
 	const safeAccountRows = Array.isArray(accountRows) ? accountRows : [];
 	const safeTransactionRows = Array.isArray(transactionRows) ? transactionRows : [];
 	const estimatedAvailableLines = Math.max(12, terminalHeight - 12);
-	const fixedLeftPaneLines = 8;
+	const spendInsightsLines = showSpendInsights ? 8 : 0;
+	const fixedLeftPaneLines = 8 + spendInsightsLines;
 	const minTransactionLines = 2;
 	const accountLinesBudget = Math.max(1, estimatedAvailableLines - fixedLeftPaneLines - minTransactionLines);
 	const {usedLines: usedAccountLines} = selectAccountRowsForHeight(safeAccountRows, accountLinesBudget);
@@ -188,6 +190,112 @@ function formatAmount(amountCents) {
 
 function formatCurrency(amountCents) {
 	return `$${(Math.abs(Number(amountCents) || 0) / 100).toFixed(2)}`;
+}
+
+function formatSignedCurrency(amountCents) {
+	const safeValue = Number(amountCents) || 0;
+	const prefix = safeValue > 0 ? '+' : safeValue < 0 ? '-' : '';
+	return `${prefix}${formatCurrency(safeValue)}`;
+}
+
+function shortenCategoryPath(categoryPath, maxLength = 34) {
+	const safePath = String(categoryPath ?? '').replace(/\s+/g, ' ').trim() || 'Uncategorized';
+	if (safePath.length <= maxLength) {
+		return safePath;
+	}
+	const segments = safePath.split('>').map((segment) => segment.trim()).filter(Boolean);
+	if (segments.length > 1) {
+		const tail = segments[segments.length - 1];
+		if (tail.length <= maxLength - 4) {
+			return `... ${tail}`.slice(0, maxLength);
+		}
+	}
+	return safePath.slice(0, maxLength - 1) + '…';
+}
+
+function formatSpendSummaryLine({rankLabel, categoryPath, spendCents, pctOfSpend}) {
+	return `${rankLabel} ${shortenCategoryPath(categoryPath)} ${formatCurrency(spendCents)} (${pctOfSpend.toFixed(1)}%)`;
+}
+
+function formatMonthLabel(monthKey) {
+	if (!monthKey || !/^\d{4}-\d{2}$/.test(monthKey)) {
+		return monthKey || '--';
+	}
+	return `${monthKey.slice(2, 4)}/${monthKey.slice(5, 7)}`;
+}
+
+function buildSpendInsightLines(spendInsights) {
+	if (!spendInsights || spendInsights.totals?.txCount === 0) {
+		return [
+			{key: 'empty', text: ' No spend data in last 3 months', color: '#6f7396'}
+		];
+	}
+
+	const top = spendInsights.topCategories ?? [];
+	const trend = spendInsights.monthTrend ?? [];
+	const previousMonth = trend[trend.length - 2] ?? null;
+	const currentMonth = trend[trend.length - 1] ?? null;
+	const recurringTotal = (spendInsights.recurring ?? [])
+		.reduce((sum, item) => sum + (Number(item?.totalSpendCents) || 0), 0);
+	const duplicateRows = Number(spendInsights.duplicates?.rowCount) || 0;
+	const duplicateGroups = Number(spendInsights.duplicates?.signatureCount) || 0;
+	const duplicateImpact = Number(spendInsights.duplicates?.spendImpactCents) || 0;
+	const monthDelta = (currentMonth?.spendCents ?? 0) - (previousMonth?.spendCents ?? 0);
+	const momText = previousMonth && currentMonth
+		? ` MoM: ${formatMonthLabel(previousMonth.month)} ${formatCurrency(previousMonth.spendCents)} -> ${formatMonthLabel(currentMonth.month)} ${formatCurrency(currentMonth.spendCents)} (${formatSignedCurrency(monthDelta)})`
+		: ' MoM: insufficient history';
+	const lines = [];
+
+	if (top[0]) {
+		lines.push({
+			key: 'top_1',
+			text: ` ${formatSpendSummaryLine({
+				rankLabel: 'Top:',
+				categoryPath: top[0].categoryPath,
+				spendCents: top[0].spendCents,
+				pctOfSpend: Number(top[0].pctOfSpend) || 0
+			})}`,
+			color: '#93b6ff'
+		});
+	}
+	if (top[1]) {
+		lines.push({
+			key: 'top_2',
+			text: ` ${formatSpendSummaryLine({
+				rankLabel: '2nd:',
+				categoryPath: top[1].categoryPath,
+				spendCents: top[1].spendCents,
+				pctOfSpend: Number(top[1].pctOfSpend) || 0
+			})}`,
+			color: '#88abd6'
+		});
+	}
+	if (top[2]) {
+		lines.push({
+			key: 'top_3',
+			text: ` ${formatSpendSummaryLine({
+				rankLabel: '3rd:',
+				categoryPath: top[2].categoryPath,
+				spendCents: top[2].spendCents,
+				pctOfSpend: Number(top[2].pctOfSpend) || 0
+			})}`,
+			color: '#7e9cc2'
+		});
+	}
+
+	lines.push({key: 'mom', text: momText, color: '#86a2d9'});
+	lines.push({
+		key: 'recurring',
+		text: ` Recurring: ${formatCurrency(recurringTotal)} (top ${Math.min(3, (spendInsights.recurring ?? []).length)} merchants)`,
+		color: '#84c3aa'
+	});
+	lines.push({
+		key: 'dupes',
+		text: ` Dupes: ${duplicateRows} rows in ${duplicateGroups} groups (~${formatCurrency(duplicateImpact)})`,
+		color: duplicateRows > 0 ? '#d7b37a' : '#6f7396'
+	});
+
+	return lines;
 }
 
 function formatDateShort(isoDate) {
@@ -240,7 +348,9 @@ export function Dashboard({
 	searchLabel = 'institution:all',
 	summaryLabel = 'Institutions',
 	cashFlow30d = null,
-	leftPaneRatio = 0.62
+	leftPaneRatio = 0.62,
+	spendInsights = null,
+	showSpendInsights = false
 }) {
 		const normalizedLeftPaneRatio = Number.isFinite(Number(leftPaneRatio))
 			? Math.min(1, Math.max(0.5, Number(leftPaneRatio)))
@@ -248,7 +358,8 @@ export function Dashboard({
 		const leftPaneWidth = Math.max(56, Math.floor(terminalWidth * normalizedLeftPaneRatio));
 		const safeTableWidth = Math.max(56, leftPaneWidth - 8);
 	const estimatedAvailableLines = Math.max(12, terminalHeight - 12);
-	const fixedLeftPaneLines = 8;
+	const spendInsightsLines = showSpendInsights ? 8 : 0;
+	const fixedLeftPaneLines = 8 + spendInsightsLines;
 	const minTransactionLines = 2;
 	const accountLinesBudget = Math.max(1, estimatedAvailableLines - fixedLeftPaneLines - minTransactionLines);
 	const {rows: visibleAccountRows} = selectAccountRowsForHeight(accountRows, accountLinesBudget);
@@ -260,11 +371,13 @@ export function Dashboard({
 		terminalHeight,
 		accountRows,
 		transactionRows,
-		showRemainingTransactions
+		showRemainingTransactions,
+		showSpendInsights
 	});
 	const visibleTransactionRows = Array.isArray(visibleTransactionRowsProp)
 		? visibleTransactionRowsProp
 		: derivedVisibleTransactionRows;
+	const spendInsightLines = showSpendInsights ? buildSpendInsightLines(spendInsights) : [];
 	const tableHeader = renderTableLine(
 		Object.fromEntries(COLUMNS.map((column) => [column.key, column.label])),
 		computeColumnWidths(safeTableWidth)
@@ -283,6 +396,16 @@ export function Dashboard({
 					<InstitutionRow key={item.id} item={item} isSelected={index === 0} leftPaneWidth={leftPaneWidth} />
 				))}
 				<Text color="#2f3a67">{'-'.repeat(Math.max(30, leftPaneWidth - 4))}</Text>
+				{showSpendInsights && (
+					<>
+						<Text backgroundColor="#2f2848" color="#d8c8ff">  BLEED SNAPSHOT (3M)  </Text>
+						<Text color="#2f3a67">{'-'.repeat(Math.max(30, leftPaneWidth - 4))}</Text>
+						{spendInsightLines.map((line) => (
+							<Text key={line.key} color={line.color}>{line.text}</Text>
+						))}
+						<Text color="#2f3a67">{'-'.repeat(Math.max(30, leftPaneWidth - 4))}</Text>
+					</>
+				)}
 				<Text backgroundColor="#1f2f56" color="#9db5e9">  {transactionsSectionTitle}  </Text>
 				<Text color="#2f3a67">{'-'.repeat(Math.max(30, leftPaneWidth - 4))}</Text>
 				{visibleTransactionRows.length === 0 && (
@@ -307,7 +430,7 @@ export function Dashboard({
 						<Text color="#6f7396"> No more results in this set</Text>
 					)}
 					<Text color="#6b74a8"> Filter: {searchLabel}</Text>
-					<Text color="#6b74a8"> Source: ~/.config/wealth-planner/main.json</Text>
+					<Text color="#6b74a8"> Source: ~/.config/wealth-planner/main.db</Text>
 				</Box>
 			</Box>
 		);

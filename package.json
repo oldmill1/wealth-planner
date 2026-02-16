@@ -7,7 +7,7 @@
     "start": "node --import tsx src/index.jsx",
     "dev": "node --watch --import tsx src/index.jsx",
     "clean_db": "node scripts/clean-db.js",
-    "test": "node --import tsx --test --test-concurrency=1 tests/*.test.js"
+    "test": "WEALTH_PLANNER_CONFIG_DIR=\"${TMPDIR:-/tmp}/wealth-planner-test-config\" node --import tsx --test --test-concurrency=1 tests/*.test.js"
   },
   "keywords": [],
   "author": "",
