@@ -95,7 +95,7 @@ function withEmptyInstitutionRow(rows, placeholderLabel = 'Add First Deposit Acc
 }
 
 const TAB_COMMANDS = {
-	Home: ['clean_db'],
+	Home: ['backup_db', 'clean_db'],
 	Balances: ['add_deposit_account', 'upload_csv', 'switch', 'search', 'clear'],
 	Credit: ['add_credit_account', 'upload_csv', 'switch', 'search', 'clear']
 };

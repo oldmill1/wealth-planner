@@ -34,6 +34,9 @@ export const DEFAULT_COMMAND_REGISTRY = {
 		clean_db: {
 			description: 'Backup then remove the local main database file.'
 		},
+		backup_db: {
+			description: 'Create timestamped backups for local database files.'
+		},
 		add_deposit_account: {
 			description: 'Create a new deposit account for the active user.'
 		},

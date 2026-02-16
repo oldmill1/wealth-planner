@@ -1,7 +1,8 @@
 import fs from 'node:fs/promises';
+import path from 'node:path';
 
 import {cleanDb} from '../../lib/clean-db.js';
-import {COMMANDS_PATH, CONFIG_DIR} from '../constants.js';
+import {COMMANDS_PATH, CONFIG_DIR, DB_PATH, SQLITE_DB_PATH} from '../constants.js';
 import {DEFAULT_COMMAND_REGISTRY} from '../data/demo.js';
 
 function normalizeCommandRegistryShape(parsed) {
@@ -38,6 +39,10 @@ function normalizeCommandRegistryShape(parsed) {
 
 	if (!normalized.commands.clean_db || typeof normalized.commands.clean_db !== 'object') {
 		normalized.commands.clean_db = {...DEFAULT_COMMAND_REGISTRY.commands.clean_db};
+		changed = true;
+	}
+	if (!normalized.commands.backup_db || typeof normalized.commands.backup_db !== 'object') {
+		normalized.commands.backup_db = {...DEFAULT_COMMAND_REGISTRY.commands.backup_db};
 		changed = true;
 	}
 
@@ -84,6 +89,52 @@ function normalizeCommandRegistryShape(parsed) {
 	return {normalized, changed};
 }
 
+async function fileExists(filePath) {
+	try {
+		await fs.access(filePath);
+		return true;
+	} catch (error) {
+		if (error && error.code === 'ENOENT') {
+			return false;
+		}
+		throw error;
+	}
+}
+
+function makeBackupFileName(sourcePath, timestamp) {
+	const baseName = path.basename(sourcePath);
+	return `${baseName}.${timestamp}.bak`;
+}
+
+async function backupDatabaseFiles() {
+	const backupsDir = path.join(CONFIG_DIR, 'backups');
+	const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+	const sourceFiles = [
+		DB_PATH,
+		SQLITE_DB_PATH,
+		`${SQLITE_DB_PATH}-wal`,
+		`${SQLITE_DB_PATH}-shm`
+	];
+	const presentFiles = [];
+	for (const sourcePath of sourceFiles) {
+		if (await fileExists(sourcePath)) {
+			presentFiles.push(sourcePath);
+		}
+	}
+	if (presentFiles.length === 0) {
+		return {created: [], backupsDir};
+	}
+
+	await fs.mkdir(backupsDir, {recursive: true});
+	const created = [];
+	for (const sourcePath of presentFiles) {
+		const destinationPath = path.join(backupsDir, makeBackupFileName(sourcePath, timestamp));
+		await fs.copyFile(sourcePath, destinationPath);
+		created.push(destinationPath);
+	}
+	return {created, backupsDir};
+}
+
 export async function loadOrInitCommandRegistry() {
 	await fs.mkdir(CONFIG_DIR, {recursive: true});
 
@@ -117,6 +168,13 @@ export async function executeCommand(commandName) {
 		return backups
 			? `Databases removed. Backups: ${backups}`
 			: 'Databases removed.';
+	}
+	if (commandName === 'backup_db') {
+		const backupResult = await backupDatabaseFiles();
+		if (backupResult.created.length === 0) {
+			return `No database files found to back up in ${CONFIG_DIR}.`;
+		}
+		return `Backup complete (${backupResult.created.length} file${backupResult.created.length === 1 ? '' : 's'}) in ${backupResult.backupsDir}.`;
 	}
 	throw new Error(`Unknown command: /${commandName}`);
 }
