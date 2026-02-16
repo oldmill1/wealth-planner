@@ -6,12 +6,6 @@ async function runCleanDb() {
 		console.log(`No databases found at ${result.dbPath} and ${result.sqliteDbPath}. Nothing to clean.`);
 		return;
 	}
-	if (result.backupPaths?.json) {
-		console.log(`JSON backup created: ${result.backupPaths.json}`);
-	}
-	if (result.backupPaths?.sqlite) {
-		console.log(`SQLite backup created: ${result.backupPaths.sqlite}`);
-	}
 	console.log(`Database removed: ${result.dbPath}`);
 	console.log(`Database removed: ${result.sqliteDbPath}`);
 }

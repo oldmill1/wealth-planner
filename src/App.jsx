@@ -113,7 +113,7 @@ function withEmptyInstitutionRow(rows, placeholderLabel = 'Add First Deposit Acc
 }
 
 const TAB_COMMANDS = {
-	Home: ['backup_db', 'clean_db'],
+	Home: ['clean_db'],
 	Balances: ['add_deposit_account', 'upload_csv', 'switch', 'search', 'clear'],
 	Credit: ['add_credit_account', 'upload_csv', 'switch', 'search', 'clear']
 };
@@ -522,7 +522,8 @@ export function App() {
 			accountRows: activeTabTransactionState.tableRows,
 			transactionRows: activeTabTransactionState.displayTransactions,
 			transactionPageIndex,
-			showSpendInsights: Boolean(ENABLE_SPEND_INSIGHTS && currentTab === 'Credit')
+			showSpendInsights: Boolean(ENABLE_SPEND_INSIGHTS && currentTab === 'Credit'),
+			maximizeTransactions: activeTransactionFilter?.type === 'category_search'
 		});
 		return {
 			visibleTransactionRows: view.visibleTransactionRows,
@@ -530,7 +531,7 @@ export function App() {
 			totalPages: view.totalPages,
 			currentPageIndex: view.currentPageIndex
 		};
-	}, [activeTabTransactionState, bootState, terminalHeight, transactionPageIndex, currentTab]);
+	}, [activeTabTransactionState, bootState, terminalHeight, transactionPageIndex, currentTab, activeTransactionFilter]);
 
 	useEffect(() => {
 		setSelectedSuggestionIndex(0);
@@ -1529,6 +1530,7 @@ export function App() {
 				return null;
 			}
 			const contentWidth = Math.max(56, terminalWidth - 4);
+			const isSearchMode = activeTransactionFilter?.type === 'category_search';
 
 			return (
 				<>
@@ -1550,6 +1552,7 @@ export function App() {
 							cashFlow30d={tableState.cashFlow30d}
 							leftPaneRatio={1}
 							showSpendInsights={false}
+							maximizeTransactions={isSearchMode}
 						/>
 					</Box>
 				</>
@@ -1562,6 +1565,7 @@ export function App() {
 				return null;
 			}
 			const contentWidth = Math.max(56, terminalWidth - 4);
+			const isSearchMode = activeTransactionFilter?.type === 'category_search';
 
 			return (
 				<>
@@ -1583,6 +1587,7 @@ export function App() {
 							leftPaneRatio={1}
 							spendInsights={creditSpendInsights}
 							showSpendInsights={Boolean(ENABLE_SPEND_INSIGHTS)}
+							maximizeTransactions={isSearchMode}
 						/>
 					</Box>
 				</>

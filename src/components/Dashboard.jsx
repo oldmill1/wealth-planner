@@ -157,16 +157,19 @@ export function deriveDashboardTransactionView({
 	accountRows,
 	transactionRows,
 	transactionPageIndex = 0,
-	showSpendInsights = false
+	showSpendInsights = false,
+	maximizeTransactions = false
 }) {
 	const safeAccountRows = Array.isArray(accountRows) ? accountRows : [];
 	const safeTransactionRows = Array.isArray(transactionRows) ? transactionRows : [];
 	const estimatedAvailableLines = Math.max(12, terminalHeight - 12);
-	const spendInsightsLines = showSpendInsights ? 8 : 0;
-	const fixedLeftPaneLines = 8 + spendInsightsLines;
+	const spendInsightsLines = showSpendInsights && !maximizeTransactions ? 8 : 0;
+	const fixedLeftPaneLines = maximizeTransactions ? 4 : 8 + spendInsightsLines;
 	const minTransactionLines = 2;
-	const accountLinesBudget = Math.max(1, estimatedAvailableLines - fixedLeftPaneLines - minTransactionLines);
-	const {usedLines: usedAccountLines} = selectAccountRowsForHeight(safeAccountRows, accountLinesBudget);
+	const accountLinesBudget = maximizeTransactions ? 0 : Math.max(1, estimatedAvailableLines - fixedLeftPaneLines - minTransactionLines);
+	const {usedLines: usedAccountLines} = maximizeTransactions
+		? {usedLines: 0}
+		: selectAccountRowsForHeight(safeAccountRows, accountLinesBudget);
 	const transactionLinesBudget = Math.max(1, estimatedAvailableLines - fixedLeftPaneLines - usedAccountLines);
 	const hasOverflowTransactions = safeTransactionRows.length > transactionLinesBudget;
 	const totalPages = Math.max(1, Math.ceil(safeTransactionRows.length / transactionLinesBudget));
@@ -361,7 +364,8 @@ export function Dashboard({
 	cashFlow30d = null,
 	leftPaneRatio = 0.62,
 	spendInsights = null,
-	showSpendInsights = false
+	showSpendInsights = false,
+	maximizeTransactions = false
 }) {
 		const normalizedLeftPaneRatio = Number.isFinite(Number(leftPaneRatio))
 			? Math.min(1, Math.max(0.5, Number(leftPaneRatio)))
@@ -369,11 +373,13 @@ export function Dashboard({
 		const leftPaneWidth = Math.max(56, Math.floor(terminalWidth * normalizedLeftPaneRatio));
 		const safeTableWidth = Math.max(56, leftPaneWidth - 8);
 	const estimatedAvailableLines = Math.max(12, terminalHeight - 12);
-	const spendInsightsLines = showSpendInsights ? 8 : 0;
-	const fixedLeftPaneLines = 8 + spendInsightsLines;
+	const spendInsightsLines = showSpendInsights && !maximizeTransactions ? 8 : 0;
+	const fixedLeftPaneLines = maximizeTransactions ? 4 : 8 + spendInsightsLines;
 	const minTransactionLines = 2;
-	const accountLinesBudget = Math.max(1, estimatedAvailableLines - fixedLeftPaneLines - minTransactionLines);
-	const {rows: visibleAccountRows} = selectAccountRowsForHeight(accountRows, accountLinesBudget);
+	const accountLinesBudget = maximizeTransactions ? 0 : Math.max(1, estimatedAvailableLines - fixedLeftPaneLines - minTransactionLines);
+	const {rows: visibleAccountRows} = maximizeTransactions
+		? {rows: []}
+		: selectAccountRowsForHeight(accountRows, accountLinesBudget);
 	const {
 		visibleTransactionRows: derivedVisibleTransactionRows,
 		hasOverflowTransactions,
@@ -384,12 +390,13 @@ export function Dashboard({
 		accountRows,
 		transactionRows,
 		transactionPageIndex,
-		showSpendInsights
+		showSpendInsights,
+		maximizeTransactions
 	});
 	const visibleTransactionRows = Array.isArray(visibleTransactionRowsProp)
 		? visibleTransactionRowsProp
 		: derivedVisibleTransactionRows;
-	const spendInsightLines = showSpendInsights ? buildSpendInsightLines(spendInsights) : [];
+	const spendInsightLines = showSpendInsights && !maximizeTransactions ? buildSpendInsightLines(spendInsights) : [];
 	const spendInsightTextWidth = Math.max(24, leftPaneWidth - 6);
 	const tableHeader = renderTableLine(
 		Object.fromEntries(COLUMNS.map((column) => [column.key, column.label])),
@@ -399,24 +406,28 @@ export function Dashboard({
 	return (
 		<Box width="100%" paddingX={1} flexDirection="row">
 			<Box width={leftPaneWidth} flexDirection="column" paddingX={1}>
-				<Text color="#d4dcff">My {summaryLabel}</Text>
-				<Text color="#2f3a67">{'='.repeat(Math.max(30, leftPaneWidth - 4))}</Text>
-				<Box width="100%" paddingX={1}>
-					<Text color="#aeb2df">{tableHeader}</Text>
-				</Box>
-				<Text color="#2f3a67">{'-'.repeat(Math.max(30, leftPaneWidth - 4))}</Text>
-				{visibleAccountRows.map((item, index) => (
-					<InstitutionRow key={item.id} item={item} isSelected={index === 0} leftPaneWidth={leftPaneWidth} />
-				))}
-				<Text color="#2f3a67">{'-'.repeat(Math.max(30, leftPaneWidth - 4))}</Text>
-				{showSpendInsights && (
+				{!maximizeTransactions && (
 					<>
-						<Text backgroundColor="#2f2848" color="#d8c8ff">  BLEED SNAPSHOT (3M)  </Text>
+						<Text color="#d4dcff">My {summaryLabel}</Text>
+						<Text color="#2f3a67">{'='.repeat(Math.max(30, leftPaneWidth - 4))}</Text>
+						<Box width="100%" paddingX={1}>
+							<Text color="#aeb2df">{tableHeader}</Text>
+						</Box>
 						<Text color="#2f3a67">{'-'.repeat(Math.max(30, leftPaneWidth - 4))}</Text>
-						{spendInsightLines.map((line) => (
-							<Text key={line.key} color={line.color}>{clampLine(line.text, spendInsightTextWidth)}</Text>
+						{visibleAccountRows.map((item, index) => (
+							<InstitutionRow key={item.id} item={item} isSelected={index === 0} leftPaneWidth={leftPaneWidth} />
 						))}
 						<Text color="#2f3a67">{'-'.repeat(Math.max(30, leftPaneWidth - 4))}</Text>
+						{showSpendInsights && (
+							<>
+								<Text backgroundColor="#2f2848" color="#d8c8ff">  BLEED SNAPSHOT (3M)  </Text>
+								<Text color="#2f3a67">{'-'.repeat(Math.max(30, leftPaneWidth - 4))}</Text>
+								{spendInsightLines.map((line) => (
+									<Text key={line.key} color={line.color}>{clampLine(line.text, spendInsightTextWidth)}</Text>
+								))}
+								<Text color="#2f3a67">{'-'.repeat(Math.max(30, leftPaneWidth - 4))}</Text>
+							</>
+						)}
 					</>
 				)}
 				<Text backgroundColor="#1f2f56" color="#9db5e9">  {transactionsSectionTitle}  </Text>
