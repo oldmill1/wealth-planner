@@ -22,16 +22,6 @@ export function resetSqliteAdapterForTests() {
 	dbInstance = null;
 }
 
-function removeSqliteFiles() {
-	for (const suffix of ['', '-wal', '-shm']) {
-		try {
-			fs.rmSync(`${SQLITE_DB_PATH}${suffix}`, {force: true});
-		} catch (_error) {
-			// ignore cleanup failures during retry path
-		}
-	}
-}
-
 function mapTransactionRow(row) {
 	const sourceType = row.source_type ? String(row.source_type) : '';
 	const sourceFileName = row.source_file_name ? String(row.source_file_name) : '';
@@ -264,6 +254,7 @@ function getDb() {
 		} catch (_error) {
 			// Fallback to default journal mode if WAL is unavailable on the host filesystem.
 		}
+		db.pragma('busy_timeout = 5000');
 		db.pragma('foreign_keys = ON');
 		ensureSchema(db);
 		return db;
@@ -273,9 +264,11 @@ function getDb() {
 		dbInstance = openAndInit();
 		return dbInstance;
 	} catch (error) {
-		removeSqliteFiles();
-		dbInstance = openAndInit();
-		return dbInstance;
+		const reason = error instanceof Error ? error.message : String(error);
+		throw new Error(
+			`Failed to open SQLite database at ${SQLITE_DB_PATH}: ${reason}. ` +
+			'Close other database tools that might replace or lock this file and restart the app.'
+		);
 	}
 }
 

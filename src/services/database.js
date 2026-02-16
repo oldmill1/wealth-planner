@@ -440,6 +440,12 @@ export async function loadOrInitDatabase() {
 			const accountSyncResult = syncAccountsToSqlite(normalized.accounts ?? []);
 			const sqliteData = await sqliteAdapter.loadDatabase();
 			const firstUser = normalized.users?.[0] ?? null;
+			const hasImportActivity = (normalized.user_activity ?? []).some((item) => (
+				String(item?.type ?? '').trim() === 'CSV_IMPORT'
+			));
+			const sqliteTransactionCount = Array.isArray(sqliteData.transactions)
+				? sqliteData.transactions.length
+				: 0;
 			return {
 				firstRun: false,
 				user: firstUser,
@@ -449,7 +455,8 @@ export async function loadOrInitDatabase() {
 				userActivity: normalized.user_activity ?? [],
 				uiState: normalizeUiState(normalized.meta?.ui_state),
 				warnings: {
-					skippedTransactions: Number(accountSyncResult?.skippedTransactions) || 0
+					skippedTransactions: Number(accountSyncResult?.skippedTransactions) || 0,
+					sqliteMissingImportedTransactions: hasImportActivity && sqliteTransactionCount === 0
 				}
 			};
 	} catch (error) {
@@ -464,7 +471,10 @@ export async function loadOrInitDatabase() {
 				transactions: [],
 				userActivity: [],
 				uiState: normalizeUiState({}),
-				warnings: {skippedTransactions: 0}
+				warnings: {
+					skippedTransactions: 0,
+					sqliteMissingImportedTransactions: false
+				}
 			};
 		}
 }

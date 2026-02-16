@@ -560,6 +560,11 @@ export function App() {
 						setCommandMessage(
 							`Skipped ${bios.warnings.skippedTransactions} orphaned transactions during SQLite account migration.`
 						);
+					} else if (bios.warnings?.sqliteMissingImportedTransactions) {
+						setCommandMessage(
+							'Warning: imports exist in activity, but SQLite has 0 transactions. ' +
+							'Close external DB tools and restart to reconnect the same DB file.'
+						);
 					}
 					setBootState('ready');
 			} catch (error) {
