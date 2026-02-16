@@ -20,7 +20,7 @@ test('loadOrInitCommandRegistry removes backup_db from legacy registry files', a
 	const legacyRegistry = {
 		version: 1,
 		commands: {
-			clean_db: {description: 'old'},
+			clean_db: {description: 'legacy clean'},
 			backup_db: {description: 'legacy backup command'}
 		}
 	};
@@ -28,5 +28,18 @@ test('loadOrInitCommandRegistry removes backup_db from legacy registry files', a
 
 	const loaded = await loadOrInitCommandRegistry();
 	assert.equal(loaded.backup_db, undefined);
-	assert.equal(typeof loaded.clean_db, 'object');
+	assert.equal(loaded.clean_db, undefined);
+});
+
+test('default command registry exposes only non-destructive commands', async () => {
+	await resetConfigDir();
+	const loaded = await loadOrInitCommandRegistry();
+	assert.equal(typeof loaded.add_deposit_account, 'object');
+	assert.equal(typeof loaded.add_credit_account, 'object');
+	assert.equal(typeof loaded.upload_csv, 'object');
+	assert.equal(typeof loaded.switch, 'object');
+	assert.equal(typeof loaded.search, 'object');
+	assert.equal(typeof loaded.clear, 'object');
+	assert.equal(loaded.clean_db, undefined);
+	assert.equal(loaded.backup_db, undefined);
 });

@@ -81,9 +81,48 @@ function mapAccountRow(row) {
 	};
 }
 
-function hasTransactionForeignKey(db) {
-	const rows = db.prepare('PRAGMA foreign_key_list(transactions)').all();
-	return rows.some((row) => row.table === 'accounts' && row.from === 'institution_id' && row.to === 'id');
+function mapUserRow(row) {
+	return {
+		id: row.id,
+		name: row.name,
+		timezone: row.timezone,
+		created_at: row.created_at,
+		updated_at: row.updated_at
+	};
+}
+
+function mapUiStateRow(row) {
+	return {
+		institution_filter_by_tab: {
+			Balances: String(row?.institution_filter_balances ?? 'all').trim() || 'all',
+			Credit: String(row?.institution_filter_credit ?? 'all').trim() || 'all'
+		}
+	};
+}
+
+function parseMetadataJson(raw) {
+	if (!raw) {
+		return null;
+	}
+	try {
+		const parsed = JSON.parse(String(raw));
+		return parsed && typeof parsed === 'object' ? parsed : null;
+	} catch (_error) {
+		return null;
+	}
+}
+
+function mapUserActivityRow(row) {
+	const type = row.type ? String(row.type).trim() : '';
+	const metadata = parseMetadataJson(row.metadata_json);
+	return {
+		id: row.id,
+		user_id: row.user_id,
+		datetime: row.datetime,
+		message: row.message,
+		...(type ? {type} : {}),
+		...(metadata ? {metadata} : {})
+	};
 }
 
 function normalizeAccountForSql(account) {
@@ -110,75 +149,29 @@ function normalizeAccountForSql(account) {
 	};
 }
 
-function migrateTransactionsTableWithForeignKey(db) {
-	db.exec(`
-		CREATE TABLE transactions_next (
-			id TEXT PRIMARY KEY,
-			user_id TEXT NOT NULL,
-			institution_id TEXT NOT NULL,
-			posted_at TEXT NOT NULL,
-			description_raw TEXT NOT NULL,
-			amount_cents INTEGER NOT NULL,
-			category_path TEXT NOT NULL,
-			currency TEXT NOT NULL,
-			direction TEXT NOT NULL,
-			source_type TEXT,
-			source_file_name TEXT,
-			created_at TEXT NOT NULL,
-			updated_at TEXT NOT NULL,
-			FOREIGN KEY(institution_id) REFERENCES accounts(id) ON DELETE RESTRICT ON UPDATE CASCADE
-		);
-	`);
-	const insertResult = db.prepare(`
-		INSERT OR REPLACE INTO transactions_next (
-			id,
-			user_id,
-			institution_id,
-			posted_at,
-			description_raw,
-			amount_cents,
-			category_path,
-			currency,
-			direction,
-			source_type,
-			source_file_name,
-			created_at,
-			updated_at
-		)
-		SELECT
-			t.id,
-			t.user_id,
-			t.institution_id,
-			t.posted_at,
-			t.description_raw,
-			t.amount_cents,
-			t.category_path,
-			t.currency,
-			t.direction,
-			t.source_type,
-			t.source_file_name,
-			t.created_at,
-			t.updated_at
-		FROM transactions t
-		WHERE EXISTS (
-			SELECT 1
-			FROM accounts a
-			WHERE a.id = t.institution_id
-		)
-	`).run();
-	const inserted = insertResult.changes ?? 0;
-	const total = db.prepare('SELECT COUNT(1) AS count FROM transactions').get()?.count ?? 0;
-
-	db.exec(`
-		DROP TABLE transactions;
-		ALTER TABLE transactions_next RENAME TO transactions;
-	`);
-
-	return Math.max(0, total - inserted);
-}
-
 function ensureSchema(db) {
 	db.exec(`
+		CREATE TABLE IF NOT EXISTS users (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL,
+			timezone TEXT NOT NULL,
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL
+		);
+
+		CREATE TABLE IF NOT EXISTS app_meta (
+			key TEXT PRIMARY KEY,
+			value_json TEXT NOT NULL,
+			updated_at TEXT NOT NULL
+		);
+
+		CREATE TABLE IF NOT EXISTS ui_state (
+			id INTEGER PRIMARY KEY CHECK (id = 1),
+			institution_filter_balances TEXT NOT NULL DEFAULT 'all',
+			institution_filter_credit TEXT NOT NULL DEFAULT 'all',
+			updated_at TEXT NOT NULL
+		);
+
 		CREATE TABLE IF NOT EXISTS accounts (
 			id TEXT PRIMARY KEY,
 			user_id TEXT NOT NULL,
@@ -188,7 +181,8 @@ function ensureSchema(db) {
 			last4 TEXT,
 			switch_tokens TEXT,
 			created_at TEXT NOT NULL,
-			updated_at TEXT NOT NULL
+			updated_at TEXT NOT NULL,
+			FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE RESTRICT ON UPDATE CASCADE
 		);
 
 		CREATE TABLE IF NOT EXISTS transactions (
@@ -205,6 +199,7 @@ function ensureSchema(db) {
 			source_file_name TEXT,
 			created_at TEXT NOT NULL,
 			updated_at TEXT NOT NULL,
+			FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE RESTRICT ON UPDATE CASCADE,
 			FOREIGN KEY(institution_id) REFERENCES accounts(id) ON DELETE RESTRICT ON UPDATE CASCADE
 		);
 
@@ -213,6 +208,16 @@ function ensureSchema(db) {
 			name TEXT NOT NULL,
 			parent_id TEXT,
 			FOREIGN KEY(parent_id) REFERENCES categories(id)
+		);
+
+		CREATE TABLE IF NOT EXISTS user_activity (
+			id TEXT PRIMARY KEY,
+			user_id TEXT NOT NULL,
+			datetime TEXT NOT NULL,
+			message TEXT NOT NULL,
+			type TEXT,
+			metadata_json TEXT,
+			FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE RESTRICT ON UPDATE CASCADE
 		);
 
 		CREATE INDEX IF NOT EXISTS idx_accounts_user_type_name
@@ -229,6 +234,9 @@ function ensureSchema(db) {
 
 		CREATE INDEX IF NOT EXISTS idx_categories_parent_id
 			ON categories(parent_id);
+
+		CREATE INDEX IF NOT EXISTS idx_user_activity_user_datetime
+			ON user_activity(user_id, datetime DESC);
 	`);
 
 	const defaultCategoryCount = db.prepare('SELECT COUNT(1) AS count FROM categories WHERE id = ?').get(DEFAULT_CATEGORY.id)?.count ?? 0;
@@ -333,15 +341,97 @@ function getTransactionContext(db) {
 		SET category_path = ?, updated_at = ?
 		WHERE id = ?
 	`);
-	const getByIdStmt = db.prepare('SELECT * FROM transactions WHERE id = ?');
+	const getTransactionByIdStmt = db.prepare('SELECT * FROM transactions WHERE id = ?');
 	const getAllTransactionsStmt = db.prepare('SELECT * FROM transactions ORDER BY posted_at DESC, created_at DESC');
 	const getAllCategoriesStmt = db.prepare('SELECT id, name, parent_id FROM categories ORDER BY id ASC');
 	const clearCategoriesStmt = db.prepare('DELETE FROM categories');
 	const insertCategoryStmt = db.prepare('INSERT INTO categories (id, name, parent_id) VALUES (?, ?, ?)');
 
+	const upsertUserStmt = db.prepare(`
+		INSERT INTO users (id, name, timezone, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			name = excluded.name,
+			timezone = excluded.timezone,
+			created_at = excluded.created_at,
+			updated_at = excluded.updated_at
+	`);
+	const getFirstUserStmt = db.prepare(`
+		SELECT id, name, timezone, created_at, updated_at
+		FROM users
+		ORDER BY created_at ASC
+		LIMIT 1
+	`);
+	const getUiStateStmt = db.prepare(`
+		SELECT id, institution_filter_balances, institution_filter_credit, updated_at
+		FROM ui_state
+		WHERE id = 1
+	`);
+	const upsertUiStateStmt = db.prepare(`
+		INSERT INTO ui_state (id, institution_filter_balances, institution_filter_credit, updated_at)
+		VALUES (1, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			institution_filter_balances = excluded.institution_filter_balances,
+			institution_filter_credit = excluded.institution_filter_credit,
+			updated_at = excluded.updated_at
+	`);
+	const insertUserActivityStmt = db.prepare(`
+		INSERT OR REPLACE INTO user_activity (
+			id,
+			user_id,
+			datetime,
+			message,
+			type,
+			metadata_json
+		)
+		VALUES (?, ?, ?, ?, ?, ?)
+	`);
+	const getUserActivityByUserIdStmt = db.prepare(`
+		SELECT id, user_id, datetime, message, type, metadata_json
+		FROM user_activity
+		WHERE user_id = ?
+		ORDER BY datetime DESC
+	`);
+
 	return {
+		upsertFirstUser(user) {
+			upsertUserStmt.run(user.id, user.name, user.timezone, user.created_at, user.updated_at);
+		},
+		getFirstUser() {
+			const row = getFirstUserStmt.get();
+			return row ? mapUserRow(row) : null;
+		},
+		getUiState() {
+			const row = getUiStateStmt.get();
+			return row ? mapUiStateRow(row) : null;
+		},
+		upsertUiState(uiState) {
+			const balances = String(uiState?.institution_filter_by_tab?.Balances ?? 'all').trim() || 'all';
+			const credit = String(uiState?.institution_filter_by_tab?.Credit ?? 'all').trim() || 'all';
+			const updatedAt = String(uiState?.updated_at ?? '').trim() || new Date().toISOString();
+			upsertUiStateStmt.run(balances, credit, updatedAt);
+		},
+		insertUserActivity(records) {
+			for (const record of records ?? []) {
+				if (!record?.id || !record?.user_id || !record?.datetime || !record?.message) {
+					continue;
+				}
+				insertUserActivityStmt.run(
+					record.id,
+					record.user_id,
+					record.datetime,
+					record.message,
+					record.type ? String(record.type) : null,
+					record.metadata && typeof record.metadata === 'object'
+						? JSON.stringify(record.metadata)
+						: null
+				);
+			}
+		},
+		getUserActivityByUserId(userId) {
+			return getUserActivityByUserIdStmt.all(userId).map(mapUserActivityRow);
+		},
 		replaceAccounts(accounts) {
-			const incomingIds = [];
 			for (const rawAccount of accounts ?? []) {
 				const account = normalizeAccountForSql(rawAccount);
 				if (
@@ -354,7 +444,6 @@ function getTransactionContext(db) {
 				) {
 					continue;
 				}
-				incomingIds.push(account.id);
 				replaceAccountsStmt.run(
 					account.id,
 					account.user_id,
@@ -367,10 +456,6 @@ function getTransactionContext(db) {
 					account.updated_at
 				);
 			}
-
-			return {
-				skippedTransactions: 0
-			};
 		},
 		getAllAccounts() {
 			return getAllAccountsStmt.all().map(mapAccountRow);
@@ -399,38 +484,38 @@ function getTransactionContext(db) {
 			updateCategoryStmt.run(categoryPath, updatedAt, transactionId);
 		},
 		getTransactionById(transactionId) {
-			const row = getByIdStmt.get(transactionId);
+			const row = getTransactionByIdStmt.get(transactionId);
 			return row ? mapTransactionRow(row) : null;
 		},
-			getAllTransactions() {
-				return getAllTransactionsStmt.all().map(mapTransactionRow);
-			},
+		getAllTransactions() {
+			return getAllTransactionsStmt.all().map(mapTransactionRow);
+		},
 		replaceCategories(categories) {
 			clearCategoriesStmt.run();
 			for (const category of categories ?? []) {
 				insertCategoryStmt.run(category.id, category.name, category.parent_id ?? null);
 			}
 		},
-			getAllCategories() {
-				return getAllCategoriesStmt.all().map(mapCategoryRow);
-			}
-		};
-	}
+		getAllCategories() {
+			return getAllCategoriesStmt.all().map(mapCategoryRow);
+		}
+	};
+}
 
 export function createSqliteAdapter() {
 	return {
 		async ensureReady() {
 			getDb();
 		},
-			async loadDatabase() {
-				const db = getDb();
-				const ctx = getTransactionContext(db);
-				return {
-					accounts: ctx.getAllAccounts(),
-					transactions: ctx.getAllTransactions(),
-					categories: ctx.getAllCategories()
-				};
-			},
+		async loadDatabase() {
+			const db = getDb();
+			const ctx = getTransactionContext(db);
+			return {
+				accounts: ctx.getAllAccounts(),
+				transactions: ctx.getAllTransactions(),
+				categories: ctx.getAllCategories()
+			};
+		},
 		async saveDatabase(_nextDb) {
 			throw new Error('saveDatabase is not supported by sqlite adapter.');
 		},
@@ -438,19 +523,43 @@ export function createSqliteAdapter() {
 			const db = getDb();
 			return getTransactionContext(db).getAllTransactions();
 		},
-			getAllCategories() {
-				const db = getDb();
-				return getTransactionContext(db).getAllCategories();
-			},
-			replaceAccounts(accounts) {
-				const db = getDb();
-				return getTransactionContext(db).replaceAccounts(accounts);
-			},
-			getAllAccounts() {
-				const db = getDb();
-				return getTransactionContext(db).getAllAccounts();
-			},
-			runInTransaction(work) {
+		getAllCategories() {
+			const db = getDb();
+			return getTransactionContext(db).getAllCategories();
+		},
+		replaceAccounts(accounts) {
+			const db = getDb();
+			return getTransactionContext(db).replaceAccounts(accounts);
+		},
+		getAllAccounts() {
+			const db = getDb();
+			return getTransactionContext(db).getAllAccounts();
+		},
+		getFirstUser() {
+			const db = getDb();
+			return getTransactionContext(db).getFirstUser();
+		},
+		upsertFirstUser(user) {
+			const db = getDb();
+			return getTransactionContext(db).upsertFirstUser(user);
+		},
+		getUiState() {
+			const db = getDb();
+			return getTransactionContext(db).getUiState();
+		},
+		upsertUiState(uiState) {
+			const db = getDb();
+			return getTransactionContext(db).upsertUiState(uiState);
+		},
+		insertUserActivity(records) {
+			const db = getDb();
+			return getTransactionContext(db).insertUserActivity(records);
+		},
+		getUserActivityByUserId(userId) {
+			const db = getDb();
+			return getTransactionContext(db).getUserActivityByUserId(userId);
+		},
+		runInTransaction(work) {
 			const db = getDb();
 			const transaction = db.transaction(() => {
 				const ctx = getTransactionContext(db);

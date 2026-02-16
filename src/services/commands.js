@@ -1,6 +1,5 @@
 import fs from 'node:fs/promises';
 
-import {cleanDb} from '../../lib/clean-db.js';
 import {COMMANDS_PATH, CONFIG_DIR} from '../constants.js';
 import {DEFAULT_COMMAND_REGISTRY} from '../data/demo.js';
 
@@ -33,11 +32,6 @@ function normalizeCommandRegistryShape(parsed) {
 		(!normalized.commands.upload_csv || typeof normalized.commands.upload_csv !== 'object')
 	) {
 		normalized.commands.upload_csv = {...normalized.commands.add_transactions};
-		changed = true;
-	}
-
-	if (!normalized.commands.clean_db || typeof normalized.commands.clean_db !== 'object') {
-		normalized.commands.clean_db = {...DEFAULT_COMMAND_REGISTRY.commands.clean_db};
 		changed = true;
 	}
 
@@ -84,6 +78,10 @@ function normalizeCommandRegistryShape(parsed) {
 		delete normalized.commands.backup_db;
 		changed = true;
 	}
+	if (Object.hasOwn(normalized.commands, 'clean_db')) {
+		delete normalized.commands.clean_db;
+		changed = true;
+	}
 
 	return {normalized, changed};
 }
@@ -109,12 +107,5 @@ export async function loadOrInitCommandRegistry() {
 }
 
 export async function executeCommand(commandName) {
-	if (commandName === 'clean_db') {
-		const result = await cleanDb();
-		if (!result.removed) {
-			return `No database found at ${result.dbPath} or ${result.sqliteDbPath}.`;
-		}
-		return 'Databases removed.';
-	}
 	throw new Error(`Unknown command: /${commandName}`);
 }

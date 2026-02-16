@@ -17,7 +17,6 @@ function resolveConfigDir() {
 }
 
 export const CONFIG_DIR = resolveConfigDir();
-export const DB_PATH = path.join(CONFIG_DIR, 'main.json');
 export const SQLITE_DB_PATH = path.join(CONFIG_DIR, 'main.db');
 export const COMMANDS_PATH = path.join(CONFIG_DIR, 'commands.json');
 

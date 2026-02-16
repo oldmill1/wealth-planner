@@ -31,24 +31,21 @@ export const DEMO_INSTITUTIONS = [
 export const DEFAULT_COMMAND_REGISTRY = {
 	version: 1,
 	commands: {
-		clean_db: {
-			description: 'Remove the local main database files.'
-		},
 		add_deposit_account: {
 			description: 'Create a new deposit account for the active user.'
 		},
 		add_credit_account: {
 			description: 'Create a new credit account for the active user.'
 		},
-			upload_csv: {
-				description: 'Import transactions from a CSV file into an account.'
-			},
-			switch: {
-				description: 'Switch transaction view to one institution or back to all.'
-			},
-			search: {
-				description: 'Search transactions in the current tab by category path.'
-			},
+		upload_csv: {
+			description: 'Import transactions from a CSV file into an account.'
+		},
+		switch: {
+			description: 'Switch transaction view to one institution or back to all.'
+		},
+		search: {
+			description: 'Search transactions in the current tab by category path.'
+		},
 		clear: {
 			description: 'Clear the active transaction search filter.'
 		}

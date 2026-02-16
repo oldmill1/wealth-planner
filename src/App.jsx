@@ -113,7 +113,7 @@ function withEmptyInstitutionRow(rows, placeholderLabel = 'Add First Deposit Acc
 }
 
 const TAB_COMMANDS = {
-	Home: ['clean_db'],
+	Home: [],
 	Balances: ['add_deposit_account', 'upload_csv', 'switch', 'search', 'clear'],
 	Credit: ['add_credit_account', 'upload_csv', 'switch', 'search', 'clear']
 };
@@ -614,21 +614,11 @@ export function App() {
 				}
 				setUser(bios.user);
 				setAccountRows((bios.accounts ?? bios.institutions ?? []).map(mapInstitutionToRow));
-					setTransactions(bios.transactions ?? []);
-					setCategories(bios.categories ?? []);
-					setUserActivities(bios.userActivity ?? []);
-					setInstitutionFilterByTab(normalizeInstitutionFilterByTab(bios.uiState?.institution_filter_by_tab));
-					if (Number(bios.warnings?.skippedTransactions) > 0) {
-						setCommandMessage(
-							`Skipped ${bios.warnings.skippedTransactions} orphaned transactions during SQLite account migration.`
-						);
-					} else if (bios.warnings?.sqliteMissingImportedTransactions) {
-						setCommandMessage(
-							'Warning: imports exist in activity, but SQLite has 0 transactions. ' +
-							'Close external DB tools and restart to reconnect the same DB file.'
-						);
-					}
-					setBootState('ready');
+				setTransactions(bios.transactions ?? []);
+				setCategories(bios.categories ?? []);
+				setUserActivities(bios.userActivity ?? []);
+				setInstitutionFilterByTab(normalizeInstitutionFilterByTab(bios.uiState?.institution_filter_by_tab));
+				setBootState('ready');
 			} catch (error) {
 				if (!mounted) {
 					return;
@@ -1236,18 +1226,6 @@ export function App() {
 				executeCommand(commandToRun)
 					.then((message) => {
 						setCommandMessage(message);
-						if (commandToRun === 'clean_db') {
-							setUser(null);
-							setAccountRows([]);
-							setTransactions([]);
-							setCategories([]);
-							setUserActivities([]);
-							setInstitutionFilterByTab(DEFAULT_INSTITUTION_FILTER_BY_TAB);
-							setActiveTransactionFilter(null);
-							setNameInput('');
-							setTimezoneInput(DEFAULT_TIMEZONE);
-							setBootState('wizard_name');
-						}
 					})
 					.catch((error) => {
 						setCommandMessage(`Command failed: ${error.message}`);
