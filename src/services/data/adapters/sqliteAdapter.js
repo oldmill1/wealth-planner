@@ -368,27 +368,8 @@ function getTransactionContext(db) {
 				);
 			}
 
-			let skippedDuringMigration = 0;
-			if (!hasTransactionForeignKey(db)) {
-				skippedDuringMigration = migrateTransactionsTableWithForeignKey(db);
-			}
-			let deleteOrphansResult;
-			if (incomingIds.length === 0) {
-				deleteOrphansResult = db.prepare('DELETE FROM transactions').run();
-				db.prepare('DELETE FROM accounts').run();
-			} else {
-				const placeholders = incomingIds.map(() => '?').join(', ');
-				deleteOrphansResult = db.prepare(`
-					DELETE FROM transactions
-					WHERE institution_id NOT IN (${placeholders})
-				`).run(...incomingIds);
-				db.prepare(`
-					DELETE FROM accounts
-					WHERE id NOT IN (${placeholders})
-				`).run(...incomingIds);
-			}
 			return {
-				skippedTransactions: skippedDuringMigration + (deleteOrphansResult.changes ?? 0)
+				skippedTransactions: 0
 			};
 		},
 		getAllAccounts() {

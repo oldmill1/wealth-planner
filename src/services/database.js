@@ -437,7 +437,6 @@ export async function loadOrInitDatabase() {
 			if (changed) {
 				await fs.writeFile(DB_PATH, JSON.stringify(normalized, null, 2), 'utf8');
 			}
-			const accountSyncResult = syncAccountsToSqlite(normalized.accounts ?? []);
 			const sqliteData = await sqliteAdapter.loadDatabase();
 			const firstUser = normalized.users?.[0] ?? null;
 			const hasImportActivity = (normalized.user_activity ?? []).some((item) => (
@@ -455,7 +454,7 @@ export async function loadOrInitDatabase() {
 				userActivity: normalized.user_activity ?? [],
 				uiState: normalizeUiState(normalized.meta?.ui_state),
 				warnings: {
-					skippedTransactions: Number(accountSyncResult?.skippedTransactions) || 0,
+					skippedTransactions: 0,
 					sqliteMissingImportedTransactions: hasImportActivity && sqliteTransactionCount === 0
 				}
 			};
@@ -485,7 +484,6 @@ export async function saveFirstUser(name, timezone) {
 	const user = createRecord({name, timezone});
 	const database = createDatabase(user);
 	await fs.writeFile(DB_PATH, JSON.stringify(database, null, 2), 'utf8');
-	syncAccountsToSqlite([]);
 	return user;
 }
 
@@ -534,7 +532,7 @@ export async function addInstitutionForUser({userId, name, type = 'BANK', aliase
 	};
 
 	await fs.writeFile(DB_PATH, JSON.stringify(normalized, null, 2), 'utf8');
-	syncAccountsToSqlite(normalized.accounts);
+	syncAccountsToSqlite([institution]);
 	return institution;
 }
 
@@ -933,11 +931,7 @@ export async function importTransactionsToDatabase({institutionId, transactions,
 	if (!institution) {
 		throw new Error('Institution not found.');
 	}
-	const accountSyncResult = syncAccountsToSqlite(normalized.accounts);
-	if (Number(accountSyncResult?.skippedTransactions) > 0) {
-		// Keep the warning available for callers while still allowing import.
-		// The app can surface this as needed.
-	}
+	syncAccountsToSqlite([institution]);
 	const sqliteAccount = sqliteAdapter.getAllAccounts().find((item) => item.id === institutionId);
 	if (!sqliteAccount) {
 		throw new Error('Institution not found in SQLite store.');

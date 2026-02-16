@@ -208,7 +208,7 @@ test('import activity keeps legacy entries untouched and appends structured meta
 	assert.equal(imports[0].metadata.file_name, 'sample.csv');
 });
 
-test('loadOrInitDatabase migrates orphan transactions and returns skip warning', {concurrency: false}, async () => {
+test('loadOrInitDatabase does not prune transactions during legacy schema load', {concurrency: false}, async () => {
 	await resetConfigDir();
 	const now = '2026-02-01T00:00:00.000Z';
 	const userId = 'user_migrate_1';
@@ -265,9 +265,9 @@ test('loadOrInitDatabase migrates orphan transactions and returns skip warning',
 	db.close();
 
 	const loaded = await loadOrInitDatabase();
-	assert.equal(loaded.warnings.skippedTransactions, 1);
+	assert.equal(loaded.warnings.skippedTransactions, 0);
 	assert.equal(loaded.transactions.some((item) => item.id === 'tx_keep'), true);
-	assert.equal(loaded.transactions.some((item) => item.id === 'tx_drop'), false);
+	assert.equal(loaded.transactions.some((item) => item.id === 'tx_drop'), true);
 });
 
 test('saveUiState persists institution filter per tab', {concurrency: false}, async () => {
@@ -282,4 +282,72 @@ test('saveUiState persists institution filter per tab', {concurrency: false}, as
 	const raw = await fs.readFile(DB_PATH, 'utf8');
 	const parsed = JSON.parse(raw);
 	assert.equal(parsed.meta.ui_state.institution_filter_by_tab.Balances, 'acc_bal_1');
+});
+
+test('loadOrInitDatabase does not wipe sqlite transactions when JSON accounts are empty', {concurrency: false}, async () => {
+	await resetConfigDir();
+	const now = '2026-02-01T00:00:00.000Z';
+	const userId = 'user_no_wipe_1';
+	const accountId = 'acc_no_wipe_1';
+	const txId = 'tx_no_wipe_1';
+	const seedJson = {
+		meta: {version: 1, created_at: now, updated_at: now},
+		users: [{id: userId, name: 'Tester', timezone: 'America/New_York', created_at: now, updated_at: now}],
+		accounts: [],
+		categories: [],
+		user_activity: []
+	};
+	await fs.writeFile(DB_PATH, JSON.stringify(seedJson, null, 2), 'utf8');
+
+	const db = new Database(SQLITE_DB_PATH);
+	db.pragma('foreign_keys = ON');
+	db.exec(`
+		CREATE TABLE accounts (
+			id TEXT PRIMARY KEY,
+			user_id TEXT NOT NULL,
+			type TEXT NOT NULL,
+			name TEXT NOT NULL,
+			nickname TEXT,
+			last4 TEXT,
+			switch_tokens TEXT,
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL
+		);
+		CREATE TABLE transactions (
+			id TEXT PRIMARY KEY,
+			user_id TEXT NOT NULL,
+			institution_id TEXT NOT NULL,
+			posted_at TEXT NOT NULL,
+			description_raw TEXT NOT NULL,
+			amount_cents INTEGER NOT NULL,
+			category_path TEXT NOT NULL,
+			currency TEXT NOT NULL,
+			direction TEXT NOT NULL,
+			source_type TEXT,
+			source_file_name TEXT,
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL,
+			FOREIGN KEY (institution_id) REFERENCES accounts(id) ON DELETE CASCADE
+		);
+		CREATE TABLE categories (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL,
+			parent_id TEXT
+		);
+	`);
+	db.prepare(`
+		INSERT INTO accounts (id, user_id, type, name, nickname, last4, switch_tokens, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`).run(accountId, userId, 'CREDIT', 'Capital One 5748 Credit Card', null, '5748', null, now, now);
+	db.prepare(`
+		INSERT INTO transactions (
+			id, user_id, institution_id, posted_at, description_raw, amount_cents, category_path, currency, direction, created_at, updated_at
+		)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`).run(txId, userId, accountId, '2026-02-06', 'APPLE FAIRVIEW', -180687, 'Shopping > Electronics > Apple', 'CAD', 'DEBIT', now, now);
+	db.close();
+
+	const loaded = await loadOrInitDatabase();
+	assert.equal(loaded.warnings.skippedTransactions, 0);
+	assert.equal(loaded.transactions.some((item) => item.id === txId), true);
 });
