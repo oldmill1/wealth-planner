@@ -397,7 +397,7 @@ export function Dashboard({
 	);
 
 	return (
-		<Box width="100%" paddingX={1} paddingY={1} flexDirection="row">
+		<Box width="100%" paddingX={1} flexDirection="row">
 			<Box width={leftPaneWidth} flexDirection="column" paddingX={1}>
 				<Text color="#d4dcff">My {summaryLabel}</Text>
 				<Text color="#2f3a67">{'='.repeat(Math.max(30, leftPaneWidth - 4))}</Text>

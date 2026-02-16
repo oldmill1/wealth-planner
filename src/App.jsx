@@ -75,6 +75,24 @@ function formatLastUpdated(updatedAt) {
 	return `${Math.floor(diffSeconds / 86400)}d ago`;
 }
 
+function summarizeActivityMessage(item) {
+	const message = String(item?.message ?? '').replace(/\s+/g, ' ').trim();
+	const type = String(item?.type ?? '').trim();
+	const countFromMetadata = Number(item?.metadata?.transaction_count);
+	if (type === 'CSV_IMPORT') {
+		const count = Number.isFinite(countFromMetadata) ? countFromMetadata : null;
+		if (count !== null) {
+			return `Imported ${count} transactions`;
+		}
+		const match = message.match(/^Imported\s+(\d+)\s+transactions/i);
+		if (match) {
+			return `Imported ${match[1]} transactions`;
+		}
+		return 'Imported transactions';
+	}
+	return message || 'Activity update';
+}
+
 function withEmptyInstitutionRow(rows, placeholderLabel = 'Add First Deposit Account', placeholderId = 'add_first_institution') {
 	if (rows.length > 0) {
 		return rows;
@@ -1440,7 +1458,7 @@ export function App() {
 			.slice(0, 6)
 			.map((item) => ({
 				id: item.id,
-				message: item.message,
+				message: summarizeActivityMessage(item),
 				relativeTime: formatLastUpdated(item.datetime)
 			}));
 		const homeTopCategory = homeSpendInsights?.topCategories?.[0] ?? null;
@@ -1521,7 +1539,6 @@ export function App() {
 
 			return (
 				<>
-					<Text color="#777898"> </Text>
 					<Box width="100%" paddingX={2} flexDirection="row">
 						<Box width={contentWidth}>
 							<Dashboard
@@ -1566,7 +1583,6 @@ export function App() {
 
 			return (
 				<>
-					<Text color="#777898"> </Text>
 					<Box width="100%" paddingX={2} flexDirection="row">
 						<Box width={contentWidth}>
 							<Dashboard
