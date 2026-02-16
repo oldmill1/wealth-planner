@@ -389,7 +389,7 @@ export function App() {
 	const [commandMessage, setCommandMessage] = useState('');
 	const [isRunningCommand, setIsRunningCommand] = useState(false);
 	const [activeTransactionFilter, setActiveTransactionFilter] = useState(null);
-	const [showRemainingTransactions, setShowRemainingTransactions] = useState(false);
+	const [transactionPageIndex, setTransactionPageIndex] = useState(0);
 	const [isTransactionFocusMode, setIsTransactionFocusMode] = useState(false);
 	const [focusedTransactionIndex, setFocusedTransactionIndex] = useState(0);
 	const [isEditTransactionCategoryModalOpen, setIsEditTransactionCategoryModalOpen] = useState(false);
@@ -492,20 +492,27 @@ export function App() {
 	}, [transactions, user?.id, currentTab, activeTabTransactionState]);
 	const transactionFocusContext = useMemo(() => {
 		if (!activeTabTransactionState || bootState !== 'ready') {
-			return {visibleTransactionRows: [], hasFocusableTransactions: false};
+			return {
+				visibleTransactionRows: [],
+				hasFocusableTransactions: false,
+				totalPages: 1,
+				currentPageIndex: 0
+			};
 		}
 		const view = deriveDashboardTransactionView({
 			terminalHeight,
 			accountRows: activeTabTransactionState.tableRows,
 			transactionRows: activeTabTransactionState.displayTransactions,
-			showRemainingTransactions,
+			transactionPageIndex,
 			showSpendInsights: Boolean(ENABLE_SPEND_INSIGHTS && currentTab === 'Credit')
 		});
 		return {
 			visibleTransactionRows: view.visibleTransactionRows,
-			hasFocusableTransactions: view.visibleTransactionRows.length > 0
+			hasFocusableTransactions: view.visibleTransactionRows.length > 0,
+			totalPages: view.totalPages,
+			currentPageIndex: view.currentPageIndex
 		};
-	}, [activeTabTransactionState, bootState, terminalHeight, showRemainingTransactions, currentTab]);
+	}, [activeTabTransactionState, bootState, terminalHeight, transactionPageIndex, currentTab]);
 
 	useEffect(() => {
 		setSelectedSuggestionIndex(0);
@@ -521,7 +528,7 @@ export function App() {
 	}, [transactionInstitutionRows.length]);
 
 	useEffect(() => {
-		setShowRemainingTransactions(false);
+		setTransactionPageIndex(0);
 	}, [currentTab, activeTransactionFilter, transactions.length, terminalHeight, institutionFilterByTab]);
 
 	useEffect(() => {
@@ -1337,7 +1344,8 @@ export function App() {
 				if (isTransactionFocusMode) {
 					setFocusedTransactionIndex(0);
 				}
-				setShowRemainingTransactions((prev) => !prev);
+				const totalPages = Number(transactionFocusContext.totalPages) || 1;
+				setTransactionPageIndex((prev) => ((prev + 1) % Math.max(1, totalPages)));
 				return;
 			}
 			if (input === 'q') {
@@ -1523,7 +1531,7 @@ export function App() {
 								transactionRows={tableState.displayTransactions}
 								visibleTransactionRows={transactionFocusContext.visibleTransactionRows}
 								transactionsSectionTitle={tableState.transactionsSectionTitle}
-								showRemainingTransactions={showRemainingTransactions}
+								transactionPageIndex={transactionPageIndex}
 								isTransactionFocusMode={isTransactionFocusMode}
 								focusedTransactionIndex={focusedTransactionIndex}
 								searchLabel={tableState.searchLabel}
@@ -1568,7 +1576,7 @@ export function App() {
 								transactionRows={tableState.displayTransactions}
 								visibleTransactionRows={transactionFocusContext.visibleTransactionRows}
 								transactionsSectionTitle={tableState.transactionsSectionTitle}
-								showRemainingTransactions={showRemainingTransactions}
+								transactionPageIndex={transactionPageIndex}
 								isTransactionFocusMode={isTransactionFocusMode}
 								focusedTransactionIndex={focusedTransactionIndex}
 								searchLabel={tableState.searchLabel}
@@ -1610,7 +1618,7 @@ export function App() {
 		focusedTransactionIndex,
 		isTransactionFocusMode,
 		nameInput,
-		showRemainingTransactions,
+		transactionPageIndex,
 		terminalHeight,
 		terminalWidth,
 		timezoneInput,

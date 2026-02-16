@@ -156,7 +156,7 @@ export function deriveDashboardTransactionView({
 	terminalHeight,
 	accountRows,
 	transactionRows,
-	showRemainingTransactions = false,
+	transactionPageIndex = 0,
 	showSpendInsights = false
 }) {
 	const safeAccountRows = Array.isArray(accountRows) ? accountRows : [];
@@ -169,16 +169,18 @@ export function deriveDashboardTransactionView({
 	const {usedLines: usedAccountLines} = selectAccountRowsForHeight(safeAccountRows, accountLinesBudget);
 	const transactionLinesBudget = Math.max(1, estimatedAvailableLines - fixedLeftPaneLines - usedAccountLines);
 	const hasOverflowTransactions = safeTransactionRows.length > transactionLinesBudget;
-	const showingRemainder = showRemainingTransactions && hasOverflowTransactions;
-	const visibleTransactionRows = showingRemainder
-		? safeTransactionRows.slice(-transactionLinesBudget)
-		: safeTransactionRows.slice(0, transactionLinesBudget);
+	const totalPages = Math.max(1, Math.ceil(safeTransactionRows.length / transactionLinesBudget));
+	const safePageIndex = Math.max(0, Number(transactionPageIndex) || 0);
+	const currentPageIndex = safePageIndex % totalPages;
+	const sliceStart = currentPageIndex * transactionLinesBudget;
+	const visibleTransactionRows = safeTransactionRows.slice(sliceStart, sliceStart + transactionLinesBudget);
 
 	return {
 		visibleTransactionRows,
 		transactionLinesBudget,
 		hasOverflowTransactions,
-		showingRemainder
+		totalPages,
+		currentPageIndex
 	};
 }
 
@@ -351,7 +353,7 @@ export function Dashboard({
 	transactionRows = [],
 	visibleTransactionRows: visibleTransactionRowsProp = null,
 	transactionsSectionTitle = 'RECENT TRANSACTIONS',
-	showRemainingTransactions = false,
+	transactionPageIndex = 0,
 	isTransactionFocusMode = false,
 	focusedTransactionIndex = 0,
 	searchLabel = 'institution:all',
@@ -375,12 +377,13 @@ export function Dashboard({
 	const {
 		visibleTransactionRows: derivedVisibleTransactionRows,
 		hasOverflowTransactions,
-		showingRemainder
+		totalPages,
+		currentPageIndex
 	} = deriveDashboardTransactionView({
 		terminalHeight,
 		accountRows,
 		transactionRows,
-		showRemainingTransactions,
+		transactionPageIndex,
 		showSpendInsights
 	});
 	const visibleTransactionRows = Array.isArray(visibleTransactionRowsProp)
@@ -433,11 +436,8 @@ export function Dashboard({
 						</Text>
 					);
 				})}
-				{hasOverflowTransactions && !showingRemainder && (
-					<Text color="#6f7396"> Press space for more results</Text>
-				)}
-					{hasOverflowTransactions && showingRemainder && (
-						<Text color="#6f7396"> No more results in this set</Text>
+					{hasOverflowTransactions && (
+						<Text color="#6f7396">{` Press space for more results (page ${currentPageIndex + 1}/${totalPages})`}</Text>
 					)}
 					<Text color="#6b74a8"> Filter: {searchLabel}</Text>
 					<Text color="#6b74a8"> Source: ~/.config/wealth-planner/main.db</Text>

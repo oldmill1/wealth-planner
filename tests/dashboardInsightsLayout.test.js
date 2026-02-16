@@ -17,14 +17,14 @@ test('deriveDashboardTransactionView reserves lines when spend insights are enab
 		terminalHeight: 30,
 		accountRows: [{id: 'a1', isPlaceholder: true}],
 		transactionRows: makeTransactions(50),
-		showRemainingTransactions: false,
+		transactionPageIndex: 0,
 		showSpendInsights: false
 	});
 	const withInsights = deriveDashboardTransactionView({
 		terminalHeight: 30,
 		accountRows: [{id: 'a1', isPlaceholder: true}],
 		transactionRows: makeTransactions(50),
-		showRemainingTransactions: false,
+		transactionPageIndex: 0,
 		showSpendInsights: true
 	});
 
@@ -37,7 +37,7 @@ test('deriveDashboardTransactionView keeps at least one transaction line with in
 		terminalHeight: 14,
 		accountRows: [{id: 'a1', isPlaceholder: true}],
 		transactionRows: makeTransactions(5),
-		showRemainingTransactions: false,
+		transactionPageIndex: 0,
 		showSpendInsights: true
 	});
 
@@ -50,11 +50,33 @@ test('deriveDashboardTransactionView keeps remainder page bounded to budget', ()
 		terminalHeight: 24,
 		accountRows: [{id: 'a1', isPlaceholder: true}],
 		transactionRows: makeTransactions(40),
-		showRemainingTransactions: true,
+		transactionPageIndex: 3,
 		showSpendInsights: true
 	});
 
 	assert.ok(view.hasOverflowTransactions);
-	assert.equal(view.showingRemainder, true);
 	assert.equal(view.visibleTransactionRows.length, view.transactionLinesBudget);
+	assert.ok(view.currentPageIndex >= 0);
+	assert.equal(view.totalPages, Math.ceil(40 / view.transactionLinesBudget));
+});
+
+test('deriveDashboardTransactionView exposes middle pages', () => {
+	const page0 = deriveDashboardTransactionView({
+		terminalHeight: 24,
+		accountRows: [{id: 'a1', isPlaceholder: true}],
+		transactionRows: makeTransactions(20),
+		transactionPageIndex: 0,
+		showSpendInsights: true
+	});
+	const page1 = deriveDashboardTransactionView({
+		terminalHeight: 24,
+		accountRows: [{id: 'a1', isPlaceholder: true}],
+		transactionRows: makeTransactions(20),
+		transactionPageIndex: 1,
+		showSpendInsights: true
+	});
+
+	const expectedFirstIndexPage1 = page0.transactionLinesBudget;
+	assert.equal(page1.visibleTransactionRows[0]?.id, `tx_${expectedFirstIndexPage1}`);
+	assert.notEqual(page0.visibleTransactionRows[0]?.id, page1.visibleTransactionRows[0]?.id);
 });
