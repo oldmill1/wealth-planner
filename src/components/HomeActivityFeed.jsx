@@ -1,6 +1,8 @@
 import React from 'react';
 import {Box, Text} from 'ink';
 
+const MAX_ACTIVITY_ITEMS = 10;
+
 function ActivityItem({item}) {
 	return (
 		<Box flexDirection="column" paddingX={1}>
@@ -11,6 +13,8 @@ function ActivityItem({item}) {
 }
 
 export function HomeActivityFeed({activities, width = 44}) {
+	const visibleActivities = (activities ?? []).slice(0, MAX_ACTIVITY_ITEMS);
+
 	return (
 		<Box
 			width={width}
@@ -22,10 +26,9 @@ export function HomeActivityFeed({activities, width = 44}) {
 			paddingY={0}
 		>
 			<Text color="#aab2da">Activity</Text>
-			{activities.length === 0 && <Text color="#626b9b">All quiet on the western front. </Text>}
-			{activities.map((activity, index) => (
+			{visibleActivities.length === 0 && <Text color="#626b9b">All quiet on the western front. </Text>}
+			{visibleActivities.map((activity) => (
 				<Box key={activity.id} flexDirection="column">
-					{index > 0 && <Text color="#111527"> </Text>}
 					<ActivityItem item={activity} />
 				</Box>
 			))}
