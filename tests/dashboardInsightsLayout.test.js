@@ -45,3 +45,16 @@ test('deriveDashboardTransactionView keeps at least one transaction line with in
 	assert.equal(view.visibleTransactionRows.length, 1);
 });
 
+test('deriveDashboardTransactionView keeps remainder page bounded to budget', () => {
+	const view = deriveDashboardTransactionView({
+		terminalHeight: 24,
+		accountRows: [{id: 'a1', isPlaceholder: true}],
+		transactionRows: makeTransactions(40),
+		showRemainingTransactions: true,
+		showSpendInsights: true
+	});
+
+	assert.ok(view.hasOverflowTransactions);
+	assert.equal(view.showingRemainder, true);
+	assert.equal(view.visibleTransactionRows.length, view.transactionLinesBudget);
+});

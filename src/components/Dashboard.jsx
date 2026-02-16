@@ -171,7 +171,7 @@ export function deriveDashboardTransactionView({
 	const hasOverflowTransactions = safeTransactionRows.length > transactionLinesBudget;
 	const showingRemainder = showRemainingTransactions && hasOverflowTransactions;
 	const visibleTransactionRows = showingRemainder
-		? safeTransactionRows.slice(transactionLinesBudget)
+		? safeTransactionRows.slice(-transactionLinesBudget)
 		: safeTransactionRows.slice(0, transactionLinesBudget);
 
 	return {
@@ -298,6 +298,15 @@ function buildSpendInsightLines(spendInsights) {
 	return lines;
 }
 
+function clampLine(text, maxWidth) {
+	const safeText = String(text ?? '');
+	const safeWidth = Math.max(12, Number(maxWidth) || 12);
+	if (safeText.length <= safeWidth) {
+		return safeText;
+	}
+	return safeText.slice(0, safeWidth - 1) + '…';
+}
+
 function formatDateShort(isoDate) {
 	if (!isoDate) {
 		return '--';
@@ -378,6 +387,7 @@ export function Dashboard({
 		? visibleTransactionRowsProp
 		: derivedVisibleTransactionRows;
 	const spendInsightLines = showSpendInsights ? buildSpendInsightLines(spendInsights) : [];
+	const spendInsightTextWidth = Math.max(24, leftPaneWidth - 6);
 	const tableHeader = renderTableLine(
 		Object.fromEntries(COLUMNS.map((column) => [column.key, column.label])),
 		computeColumnWidths(safeTableWidth)
@@ -401,7 +411,7 @@ export function Dashboard({
 						<Text backgroundColor="#2f2848" color="#d8c8ff">  BLEED SNAPSHOT (3M)  </Text>
 						<Text color="#2f3a67">{'-'.repeat(Math.max(30, leftPaneWidth - 4))}</Text>
 						{spendInsightLines.map((line) => (
-							<Text key={line.key} color={line.color}>{line.text}</Text>
+							<Text key={line.key} color={line.color}>{clampLine(line.text, spendInsightTextWidth)}</Text>
 						))}
 						<Text color="#2f3a67">{'-'.repeat(Math.max(30, leftPaneWidth - 4))}</Text>
 					</>
